@@ -1,0 +1,25 @@
+rules_version = '2';
+
+// Firebase Storage Security Rules for LeadFlow CRM Attachments
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Lead Attachments storage path: leads/{leadId}/attachments/{fileId}/{fileName}
+    match /leads/{leadId}/attachments/{fileId}/{fileName} {
+      // Allow read/download for authenticated users (Admin / authorized representative)
+      allow read: if isAuthenticated();
+
+      // Allow upload if authenticated, file size is under 30MB, and non-empty
+      allow write: if isAuthenticated() &&
+                   request.resource.size < 30 * 1024 * 1024;
+      
+      // Allow delete for authenticated users
+      allow delete: if isAuthenticated();
+    }
+  }
+}

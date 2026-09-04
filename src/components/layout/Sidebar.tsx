@@ -1,0 +1,345 @@
+import React, { useState, useEffect } from 'react';
+import {
+  LayoutDashboard,
+  Users,
+  Kanban,
+  CalendarClock,
+  Calendar,
+  BarChart3,
+  Bell,
+  Settings,
+  Plus,
+  LogOut,
+  ShieldCheck,
+  Building2,
+  Search,
+  Tag,
+  GitMerge,
+  ArrowDownUp,
+  Sparkles,
+  Layers,
+  Palette,
+} from 'lucide-react';
+import { NavigationView } from '../../types/crm';
+import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
+import {
+  subscribeToUserNotifications,
+  subscribeToLeads,
+  subscribeToClients,
+  subscribeToNotDuplicates,
+} from '../../lib/dal';
+import {
+  findAllLeadDuplicateCandidates,
+  findAllClientDuplicateCandidates,
+} from '../../lib/dataQuality';
+import { LeadRecord, ClientRecord, NotDuplicateRecord } from '../../types/database';
+
+interface SidebarProps {
+  currentView: NavigationView;
+  onSelectView: (view: NavigationView) => void;
+  onOpenAddLead: () => void;
+}
+
+interface NavItem {
+  id: NavigationView;
+  label: string;
+  icon: React.ElementType;
+  badge?: string | number;
+}
+
+interface NavSection {
+  title: string;
+  items: NavItem[];
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({
+  currentView,
+  onSelectView,
+  onOpenAddLead,
+}) => {
+  const { currentUser, userProfile, signOut } = useAuth();
+  const { themeConfig } = useTheme();
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [duplicateCount, setDuplicateCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const unsub = subscribeToUserNotifications(currentUser.uid, (list) => {
+      const unread = list.filter((n) => !n.is_read).length;
+      setUnreadCount(unread);
+    });
+    return () => unsub();
+  }, [currentUser?.uid]);
+
+  // Track potential duplicate count for Admin badge
+  useEffect(() => {
+    let localLeads: LeadRecord[] = [];
+    let localClients: ClientRecord[] = [];
+    let localNotDups: NotDuplicateRecord[] = [];
+
+    const recompute = () => {
+      const activeL = localLeads.filter((l) => l.record_status !== 'merged');
+      const activeC = localClients.filter((c) => c.record_status !== 'merged');
+      const ld = findAllLeadDuplicateCandidates(activeL, localNotDups);
+      const cd = findAllClientDuplicateCandidates(activeC, localNotDups);
+      setDuplicateCount(ld.length + cd.length);
+    };
+
+    const unsubL = subscribeToLeads((l) => {
+      localLeads = l;
+      recompute();
+    }, userProfile?.role);
+
+    const unsubC = subscribeToClients((c) => {
+      localClients = c;
+      recompute();
+    }, userProfile?.role);
+
+    const unsubND = subscribeToNotDuplicates((nd) => {
+      localNotDups = nd;
+      recompute();
+    });
+
+    return () => {
+      unsubL();
+      unsubC();
+      unsubND();
+    };
+  }, [userProfile?.role]);
+
+  const navSections: NavSection[] = [
+    {
+      title: 'Core Pipeline',
+      items: [
+        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'leads', label: 'Leads', icon: Users },
+        { id: 'pipeline', label: 'Sales Pipeline', icon: Kanban },
+        { id: 'followups', label: 'Follow-ups', icon: CalendarClock },
+        { id: 'calendar', label: 'Sales Calendar', icon: Calendar },
+        { id: 'clients', label: 'Clients', icon: Building2 },
+      ],
+    },
+    {
+      title: 'Intelligence',
+      items: [
+        { id: 'search', label: 'Global Search', icon: Search },
+        { id: 'segments', label: 'Segments & Tags', icon: Tag },
+        { id: 'reports', label: 'Reports & KPIs', icon: BarChart3 },
+        {
+          id: 'notifications',
+          label: 'Notifications',
+          icon: Bell,
+          badge: unreadCount > 0 ? unreadCount : undefined,
+        },
+      ],
+    },
+    ...(userProfile?.role === 'ADMIN'
+      ? [
+          {
+            title: 'Enterprise Governance',
+            items: [
+              {
+                id: 'data-quality' as NavigationView,
+                label: 'Data Quality',
+                icon: GitMerge,
+                badge: duplicateCount > 0 ? duplicateCount : undefined,
+              },
+              {
+                id: 'data-management' as NavigationView,
+                label: 'Data Management',
+                icon: ArrowDownUp,
+              },
+              {
+                id: 'audit' as NavigationView,
+                label: 'Audit Trail',
+                icon: ShieldCheck,
+              },
+            ],
+          },
+        ]
+      : []),
+    {
+      title: 'System',
+      items: [{ id: 'settings', label: 'Settings', icon: Settings }],
+    },
+  ];
+
+  return (
+    <aside
+      id="main-sidebar"
+      className="hidden w-64 flex-col border-r border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-main)] md:flex md:h-screen md:sticky md:top-0 shadow-md transition-colors duration-200 z-20"
+    >
+      {/* ZaynOs App Branding */}
+      <div className="flex h-[72px] items-center justify-between border-b border-[var(--border-color)] px-5">
+        <div className="flex items-center gap-3">
+          <div
+            className="flex h-9 w-9 items-center justify-center rounded-lg shadow-sm font-black text-sm tracking-wider"
+            style={{
+              backgroundColor: 'var(--color-primary)',
+              color: 'var(--text-inverse)',
+            }}
+          >
+            Z
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-base font-bold tracking-tight text-[var(--text-main)]">
+                ZaynOs
+              </span>
+              <span
+                className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider"
+                style={{
+                  backgroundColor: 'var(--color-primary-subtle)',
+                  color: 'var(--color-primary)',
+                }}
+              >
+                CRM
+              </span>
+            </div>
+            <div className="text-[11px] font-medium text-[var(--text-muted)] flex items-center gap-1">
+              <span>Enterprise Suite</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Primary CTA: + Add Lead */}
+      <div className="p-4">
+        <button
+          id="sidebar-add-lead-btn"
+          type="button"
+          onClick={onOpenAddLead}
+          className="zaynos-btn-primary w-full text-xs uppercase tracking-wider py-2.5 shadow-sm active:scale-98"
+        >
+          <Plus className="h-4 w-4" />
+          <span>New Lead</span>
+        </button>
+      </div>
+
+      {/* Nav Sections */}
+      <nav className="flex-1 space-y-4 px-3 py-2 overflow-y-auto">
+        {navSections.map((section) => (
+          <div key={section.title} className="space-y-1">
+            <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] opacity-70">
+              {section.title}
+            </div>
+            {section.items.map((item) => {
+              const Icon = item.icon;
+              const isActive = currentView === item.id;
+              return (
+                <button
+                  key={item.id}
+                  id={`nav-${item.id}`}
+                  type="button"
+                  onClick={() => onSelectView(item.id)}
+                  className={`group flex w-full items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                    isActive
+                      ? 'font-semibold shadow-2xs'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
+                  }`}
+                  style={
+                    isActive
+                      ? {
+                          backgroundColor: 'var(--color-primary-subtle)',
+                          color: 'var(--color-primary)',
+                          borderLeft: '3px solid var(--color-primary)',
+                        }
+                      : undefined
+                  }
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Icon
+                      className="h-4 w-4 transition-colors"
+                      style={isActive ? { color: 'var(--color-primary)' } : undefined}
+                    />
+                    <span>{item.label}</span>
+                  </div>
+                  {item.badge !== undefined && (
+                    <span
+                      className="rounded-full px-1.5 py-0.5 text-[10px] font-bold border"
+                      style={{
+                        backgroundColor: 'var(--bg-elevated)',
+                        borderColor: 'var(--border-color)',
+                        color: 'var(--text-main)',
+                      }}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+
+      {/* Bottom User Profile & Theme Quick Info */}
+      <div className="p-3 border-t border-[var(--border-color)] bg-[var(--bg-card)] space-y-2">
+        {/* Active Theme Indicator */}
+        <button
+          type="button"
+          onClick={() => onSelectView('settings')}
+          className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-[11px] border border-[var(--border-color)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)] transition cursor-pointer"
+          title="Change theme in Appearance settings"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className="h-2.5 w-2.5 rounded-full shrink-0 shadow-2xs"
+              style={{ backgroundColor: 'var(--color-primary)' }}
+            />
+            <span className="font-semibold text-[var(--text-main)] truncate">
+              {themeConfig.name}
+            </span>
+          </div>
+          <Palette className="h-3.5 w-3.5 text-[var(--text-muted)] shrink-0 ml-1" />
+        </button>
+
+        {/* User Card */}
+        <div className="flex items-center justify-between pt-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-full font-bold text-xs shrink-0 border"
+              style={{
+                backgroundColor: 'var(--color-primary-subtle)',
+                color: 'var(--color-primary)',
+                borderColor: 'var(--color-primary-border)',
+              }}
+            >
+              {userProfile?.full_name?.charAt(0).toUpperCase() || 'U'}
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-[var(--text-main)] truncate leading-tight">
+                {userProfile?.full_name || 'CRM User'}
+              </div>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span
+                  className="text-[9px] font-bold px-1 py-0.2 rounded uppercase tracking-wider"
+                  style={{
+                    backgroundColor: 'var(--bg-elevated)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  {userProfile?.role || 'SALESMAN'}
+                </span>
+                <span className="text-[10px] text-[var(--text-muted)] truncate opacity-80 max-w-[90px]">
+                  {userProfile?.email}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            id="sidebar-logout-btn"
+            type="button"
+            onClick={signOut}
+            title="Sign Out"
+            className="rounded-lg p-1.5 text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--bg-hover)] transition cursor-pointer"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+};

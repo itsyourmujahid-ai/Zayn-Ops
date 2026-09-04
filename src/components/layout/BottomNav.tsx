@@ -1,0 +1,104 @@
+import React from 'react';
+import {
+  LayoutDashboard,
+  Users,
+  Building2,
+  CalendarClock,
+  Plus,
+} from 'lucide-react';
+import { NavigationView } from '../../types/crm';
+
+interface BottomNavProps {
+  currentView: NavigationView;
+  onSelectView: (view: NavigationView) => void;
+  onOpenAddLead: () => void;
+}
+
+export const BottomNav: React.FC<BottomNavProps> = ({
+  currentView,
+  onSelectView,
+  onOpenAddLead,
+}) => {
+  return (
+    <nav
+      id="mobile-bottom-nav"
+      className="fixed bottom-0 left-0 right-0 z-40 flex h-16 items-center justify-around border-t border-[var(--border-color)] bg-[var(--bg-card)] px-2 shadow-lg md:hidden transition-colors duration-200"
+    >
+      {/* Dashboard */}
+      <button
+        id="mobile-nav-dashboard"
+        type="button"
+        onClick={() => onSelectView('dashboard')}
+        className="flex min-h-[44px] flex-col items-center justify-center gap-1 px-2 text-xs transition cursor-pointer"
+        style={{
+          color: currentView === 'dashboard' ? 'var(--color-primary)' : 'var(--text-muted)',
+          fontWeight: currentView === 'dashboard' ? 700 : 500,
+        }}
+      >
+        <LayoutDashboard className="h-5 w-5" />
+        <span className="text-[10px]">Dashboard</span>
+      </button>
+
+      {/* Leads */}
+      <button
+        id="mobile-nav-leads"
+        type="button"
+        onClick={() => onSelectView('leads')}
+        className="flex min-h-[44px] flex-col items-center justify-center gap-1 px-2 text-xs transition cursor-pointer"
+        style={{
+          color: currentView === 'leads' ? 'var(--color-primary)' : 'var(--text-muted)',
+          fontWeight: currentView === 'leads' ? 700 : 500,
+        }}
+      >
+        <Users className="h-5 w-5" />
+        <span className="text-[10px]">Leads</span>
+      </button>
+
+      {/* Center + Add Lead Button */}
+      <button
+        id="mobile-nav-add-lead"
+        type="button"
+        onClick={onOpenAddLead}
+        className="-mt-5 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition active:scale-95 cursor-pointer"
+        style={{
+          backgroundColor: 'var(--color-primary)',
+          color: 'var(--text-inverse)',
+          boxShadow: '0 4px 14px var(--shadow-color)',
+        }}
+        aria-label="Add Lead"
+      >
+        <Plus className="h-6 w-6 stroke-[2.5]" />
+      </button>
+
+      {/* Clients */}
+      <button
+        id="mobile-nav-clients"
+        type="button"
+        onClick={() => onSelectView('clients')}
+        className="flex min-h-[44px] flex-col items-center justify-center gap-1 px-2 text-xs transition cursor-pointer"
+        style={{
+          color: currentView === 'clients' ? 'var(--color-primary)' : 'var(--text-muted)',
+          fontWeight: currentView === 'clients' ? 700 : 500,
+        }}
+      >
+        <Building2 className="h-5 w-5" />
+        <span className="text-[10px]">Clients</span>
+      </button>
+
+      {/* Follow-ups */}
+      <button
+        id="mobile-nav-followups"
+        type="button"
+        onClick={() => onSelectView('followups')}
+        className="flex min-h-[44px] flex-col items-center justify-center gap-1 px-2 text-xs transition cursor-pointer"
+        style={{
+          color: currentView === 'followups' ? 'var(--color-primary)' : 'var(--text-muted)',
+          fontWeight: currentView === 'followups' ? 700 : 500,
+        }}
+      >
+        <CalendarClock className="h-5 w-5" />
+        <span className="text-[10px]">Follow-ups</span>
+      </button>
+    </nav>
+  );
+};

@@ -1,0 +1,6 @@
+{
+  "name": "Lead Management & Sales CRM",
+  "description": "A professional digital sales CRM with Import/Export, Bulk Data Management, Sales Calendar, Appointment Management, Meetings, Site Visits, Pipeline Stages, and Client Management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

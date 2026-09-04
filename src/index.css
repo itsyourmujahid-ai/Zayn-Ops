@@ -1,0 +1,324 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   ZAYNOS PREMIUM DESIGN SYSTEM — CSS VARIABLES & THEME ENGINE
+   ========================================================================== */
+
+:root,
+[data-theme="obsidian-gold"] {
+  --bg-base: #121212;
+  --bg-card: #2C2C2C;
+  --color-primary: #D4AF37;
+  --text-main: #FAFAFA;
+  --text-muted: #A1A1AA;
+  --border-color: #27272a;
+
+  /* Derived ZaynOs Semantic Tokens */
+  --bg-elevated: #363636;
+  --bg-hover: #383838;
+  --bg-active: #444444;
+  --color-primary-hover: #E5C158;
+  --color-primary-subtle: rgba(212, 175, 55, 0.12);
+  --color-primary-border: rgba(212, 175, 55, 0.35);
+  --text-inverse: #121212;
+  --text-disabled: #636366;
+  --border-subtle: #242426;
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+  --info: #3B82F6;
+  --overlay: rgba(0, 0, 0, 0.8);
+  --input-bg: #1C1C1C;
+  --shadow-color: rgba(0, 0, 0, 0.6);
+  --ring-primary: rgba(212, 175, 55, 0.4);
+}
+
+[data-theme="midnight-navy"] {
+  --bg-base: #0F172A;
+  --bg-card: #1E293B;
+  --color-primary: #0EA5E9;
+  --text-main: #F8FAFC;
+  --text-muted: #64748B;
+  --border-color: #334155;
+
+  /* Derived ZaynOs Semantic Tokens */
+  --bg-elevated: #283548;
+  --bg-hover: #263346;
+  --bg-active: #334155;
+  --color-primary-hover: #38BDF8;
+  --color-primary-subtle: rgba(14, 165, 233, 0.12);
+  --color-primary-border: rgba(14, 165, 233, 0.35);
+  --text-inverse: #0F172A;
+  --text-disabled: #475569;
+  --border-subtle: #1e293b;
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+  --info: #0EA5E9;
+  --overlay: rgba(15, 23, 42, 0.8);
+  --input-bg: #131d2e;
+  --shadow-color: rgba(0, 0, 0, 0.5);
+  --ring-primary: rgba(14, 165, 233, 0.4);
+}
+
+[data-theme="emerald-noir"] {
+  --bg-base: #09090B;
+  --bg-card: #18181B;
+  --color-primary: #10B981;
+  --text-main: #E4E4E7;
+  --text-muted: #71717A;
+  --border-color: #27272a;
+
+  /* Derived ZaynOs Semantic Tokens */
+  --bg-elevated: #27272A;
+  --bg-hover: #222226;
+  --bg-active: #2E2E33;
+  --color-primary-hover: #34D399;
+  --color-primary-subtle: rgba(16, 185, 129, 0.12);
+  --color-primary-border: rgba(16, 185, 129, 0.35);
+  --text-inverse: #09090B;
+  --text-disabled: #52525B;
+  --border-subtle: #1F1F23;
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+  --info: #3B82F6;
+  --overlay: rgba(9, 9, 11, 0.85);
+  --input-bg: #121215;
+  --shadow-color: rgba(0, 0, 0, 0.6);
+  --ring-primary: rgba(16, 185, 129, 0.4);
+}
+
+/* ==========================================================================
+   GLOBAL RESET & SEAMLESS THEME SURFACE MAPPINGS
+   ========================================================================== */
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  background-color: var(--bg-base);
+  color: var(--text-main);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Sleek Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Base surface mappings for consistent dark styling */
+[data-theme] .bg-white {
+  background-color: var(--bg-card) !important;
+}
+[data-theme] .bg-slate-50 {
+  background-color: var(--bg-base) !important;
+}
+[data-theme] .bg-slate-100 {
+  background-color: var(--bg-elevated) !important;
+}
+[data-theme] .bg-slate-200 {
+  background-color: var(--bg-hover) !important;
+}
+[data-theme] .bg-slate-900 {
+  background-color: var(--bg-base) !important;
+}
+
+/* Text color adaptations */
+[data-theme] .text-slate-900,
+[data-theme] .text-slate-800 {
+  color: var(--text-main) !important;
+}
+[data-theme] .text-slate-700,
+[data-theme] .text-slate-600 {
+  color: var(--text-main) !important;
+  opacity: 0.9;
+}
+[data-theme] .text-slate-500,
+[data-theme] .text-slate-400 {
+  color: var(--text-muted) !important;
+}
+
+/* Border adaptations */
+[data-theme] .border-slate-100,
+[data-theme] .border-slate-200,
+[data-theme] .border-slate-300 {
+  border-color: var(--border-color) !important;
+}
+[data-theme] .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+[data-theme] .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--border-color) !important;
+}
+
+/* Primary color mappings across existing controls */
+[data-theme] .bg-indigo-600,
+[data-theme] .bg-indigo-700 {
+  background-color: var(--color-primary) !important;
+  color: var(--text-inverse) !important;
+}
+[data-theme] .hover\:bg-indigo-700:hover,
+[data-theme] .hover\:bg-indigo-800:hover {
+  background-color: var(--color-primary-hover) !important;
+}
+[data-theme] .text-indigo-600,
+[data-theme] .text-indigo-500,
+[data-theme] .text-indigo-700 {
+  color: var(--color-primary) !important;
+}
+[data-theme] .border-indigo-600,
+[data-theme] .border-indigo-500 {
+  border-color: var(--color-primary) !important;
+}
+[data-theme] .bg-indigo-50,
+[data-theme] .bg-indigo-50\/70,
+[data-theme] .bg-indigo-100 {
+  background-color: var(--color-primary-subtle) !important;
+  color: var(--color-primary) !important;
+}
+[data-theme] .focus\:ring-indigo-500:focus,
+[data-theme] .focus\:ring-indigo-600:focus {
+  --tw-ring-color: var(--ring-primary) !important;
+}
+
+/* Input, Select, Textarea Theme Engine */
+[data-theme] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+[data-theme] select,
+[data-theme] textarea {
+  background-color: var(--input-bg) !important;
+  color: var(--text-main) !important;
+  border-color: var(--border-color) !important;
+}
+[data-theme] input::placeholder,
+[data-theme] textarea::placeholder {
+  color: var(--text-muted) !important;
+  opacity: 0.7;
+}
+[data-theme] input:focus,
+[data-theme] select:focus,
+[data-theme] textarea:focus {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 2px var(--ring-primary) !important;
+  outline: none !important;
+}
+
+/* Table styling in themes */
+[data-theme] table th {
+  background-color: var(--bg-elevated) !important;
+  color: var(--text-muted) !important;
+  border-color: var(--border-color) !important;
+}
+[data-theme] table td {
+  border-color: var(--border-color) !important;
+}
+[data-theme] table tr:hover td {
+  background-color: var(--bg-hover) !important;
+}
+
+/* Badges for status preservation (WCAG Accessible contrast) */
+[data-theme] .bg-emerald-50 {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+  color: #34D399 !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
+}
+[data-theme] .bg-rose-50 {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+  color: #F87171 !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}
+[data-theme] .bg-amber-50 {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+  color: #FBBF24 !important;
+  border-color: rgba(245, 158, 11, 0.3) !important;
+}
+[data-theme] .bg-purple-50 {
+  background-color: rgba(168, 85, 247, 0.15) !important;
+  color: #C084FC !important;
+  border-color: rgba(168, 85, 247, 0.3) !important;
+}
+
+/* Modals & Dialog overlays */
+[data-theme] .fixed.inset-0.bg-black\/50,
+[data-theme] .fixed.inset-0.bg-slate-900\/50,
+[data-theme] .fixed.inset-0.bg-slate-900\/40 {
+  background-color: var(--overlay) !important;
+  backdrop-filter: blur(4px);
+}
+
+/* ==========================================================================
+   ZAYNOS SEMANTIC UTILITY CLASSES
+   ========================================================================== */
+
+.zaynos-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  color: var(--text-main);
+  box-shadow: 0 4px 12px var(--shadow-color);
+}
+
+.zaynos-btn-primary {
+  background-color: var(--color-primary);
+  color: var(--text-inverse);
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  transition: all 0.15s ease-in-out;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+.zaynos-btn-primary:hover {
+  background-color: var(--color-primary-hover);
+  transform: translateY(-1px);
+}
+.zaynos-btn-primary:active {
+  transform: translateY(0);
+}
+
+.zaynos-btn-secondary {
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  font-weight: 500;
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  transition: all 0.15s ease-in-out;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+.zaynos-btn-secondary:hover {
+  background-color: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+
+.zaynos-badge-primary {
+  background-color: var(--color-primary-subtle);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary-border);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}

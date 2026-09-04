@@ -1,0 +1,304 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with role-based permissions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "full_name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["ADMIN", "SALESMAN", "admin", "sales_rep"] },
+        "is_active": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "full_name", "email", "role"]
+    },
+    "Lead": {
+      "title": "Lead Record",
+      "description": "Key client account and deal pipeline record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "company_name": { "type": "string" },
+        "contact_person": { "type": "string" },
+        "phone": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "email": { "type": "string" },
+        "lead_type": { "type": "string" },
+        "location": { "type": "string" },
+        "priority": { "type": "string", "enum": ["Hot", "Warm", "Cold"] },
+        "status": { "type": "string", "enum": ["New", "Contacted", "Interested", "Meeting", "Quotation", "Negotiation", "Won", "Lost"] },
+        "next_action": { "type": "string" },
+        "next_followup_date": { "type": "string" },
+        "created_by": { "type": "string" },
+        "assigned_to": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["company_name", "created_by", "assigned_to", "status", "priority"]
+    },
+    "LeadActivity": {
+      "title": "Lead Activity",
+      "description": "Chronological interaction and audit log record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "lead_id": { "type": "string" },
+        "activity_type": { "type": "string" },
+        "description": { "type": "string" },
+        "outcome": { "type": "string" },
+        "notes": { "type": "string" },
+        "performed_by": { "type": "string" },
+        "performed_by_name": { "type": "string" },
+        "activity_date": { "type": "string", "format": "date-time" },
+        "created_by": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["lead_id", "activity_type", "created_by"]
+    },
+    "FollowUp": {
+      "title": "Follow Up Record",
+      "description": "Scheduled action task and follow-up commitment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "lead_id": { "type": "string" },
+        "company_name": { "type": "string" },
+        "contact_person": { "type": "string" },
+        "phone": { "type": "string" },
+        "action": { "type": "string" },
+        "scheduled_at": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "completed", "rescheduled", "cancelled"] },
+        "outcome": { "type": "string" },
+        "notes": { "type": "string" },
+        "completed_at": { "type": "string", "format": "date-time" },
+        "completed_by": { "type": "string" },
+        "completed_by_name": { "type": "string" },
+        "rescheduled_at": { "type": "string", "format": "date-time" },
+        "rescheduled_by": { "type": "string" },
+        "cancelled_at": { "type": "string", "format": "date-time" },
+        "cancelled_by": { "type": "string" },
+        "cancellation_reason": { "type": "string" },
+        "assigned_to": { "type": "string" },
+        "created_by": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["lead_id", "action", "scheduled_at", "status", "assigned_to", "created_by"]
+    },
+    "Attachment": {
+      "title": "Lead Attachment Record",
+      "description": "Secure file attachment metadata linked to a lead",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "lead_id": { "type": "string" },
+        "file_name": { "type": "string" },
+        "storage_path": { "type": "string" },
+        "file_type": { "type": "string" },
+        "file_size": { "type": "number" },
+        "uploaded_by": { "type": "string" },
+        "uploaded_by_name": { "type": "string" },
+        "uploaded_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "download_url": { "type": "string" }
+      },
+      "required": ["lead_id", "file_name", "storage_path", "file_type", "file_size", "uploaded_by"]
+    },
+    "Notification": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "recipient_id": { "type": "string" },
+        "recipient_name": { "type": "string" },
+        "type": { "type": "string", "enum": ["followup_due_today", "followup_overdue", "upcoming_followup", "followup_completed", "lead_assigned", "lead_reassigned", "general"] },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "lead_id": { "type": "string" },
+        "lead_company_name": { "type": "string" },
+        "follow_up_id": { "type": "string" },
+        "is_read": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "event_key": { "type": "string" },
+        "link_url": { "type": "string" }
+      },
+      "required": ["recipient_id", "type", "title", "message", "is_read"]
+    },
+    "AuditLog": {
+      "title": "Audit Log Record",
+      "description": "Immutable security, access control, and administrative accountability record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "action": { "type": "string" },
+        "entity_type": { "type": "string", "enum": ["User", "Lead", "Client", "Security", "Settings", "System"] },
+        "entity_id": { "type": "string" },
+        "performed_by": { "type": "string" },
+        "performed_by_name": { "type": "string" },
+        "performed_by_role": { "type": "string", "enum": ["ADMIN", "SALESMAN", "admin", "sales_rep"] },
+        "target_user_id": { "type": "string" },
+        "target_user_name": { "type": "string" },
+        "lead_id": { "type": "string" },
+        "lead_company_name": { "type": "string" },
+        "description": { "type": "string" },
+        "metadata": { "type": "object" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["action", "entity_type", "entity_id", "performed_by", "performed_by_name", "performed_by_role", "description", "created_at"]
+    },
+    "Client": {
+      "title": "Client Record",
+      "description": "Converted customer account with dedicated ownership, active/inactive status, and source lead relation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "company_name": { "type": "string" },
+        "contact_person": { "type": "string" },
+        "phone": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "email": { "type": "string" },
+        "location": { "type": "string" },
+        "client_type": { "type": "string" },
+        "source_lead_id": { "type": "string" },
+        "owner_id": { "type": "string" },
+        "owner_name": { "type": "string" },
+        "status": { "type": "string", "enum": ["Active", "Inactive"] },
+        "notes": { "type": "string" },
+        "converted_by": { "type": "string" },
+        "converted_by_name": { "type": "string" },
+        "tags": { "type": "array" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["company_name", "source_lead_id", "owner_id", "status"]
+    },
+    "Tag": {
+      "title": "CRM Tag Record",
+      "description": "Reusable tagging entity for Leads and Clients with active/inactive state and color coding",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["Lead", "Client", "Both"] },
+        "is_active": { "type": "boolean" },
+        "color": { "type": "string" },
+        "created_by": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "type", "is_active", "created_by", "created_at"]
+    },
+    "SavedSegment": {
+      "title": "Saved Customer & Lead Segment",
+      "description": "Admin-configured customer and lead segment filter preset for targeted CRM intelligence",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "entity_type": { "type": "string", "enum": ["Lead", "Client", "Both"] },
+        "filter_definition": { "type": "object" },
+        "is_active": { "type": "boolean" },
+        "created_by": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "entity_type", "filter_definition", "created_by", "created_at", "is_active"]
+    },
+    "NotDuplicate": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "record_a_id": { "type": "string" },
+        "record_b_id": { "type": "string" },
+        "entity_type": { "type": "string", "enum": ["Lead", "Client"] },
+        "marked_by": { "type": "string" },
+        "marked_by_name": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "record_a_id", "record_b_id", "entity_type", "marked_by", "created_at"]
+    },
+    "ImportJob": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "import_type": { "type": "string", "enum": ["leads", "clients"] },
+        "file_name": { "type": "string" },
+        "file_type": { "type": "string", "enum": ["csv", "xlsx"] },
+        "initiated_by": { "type": "string" },
+        "initiated_by_name": { "type": "string" },
+        "started_at": { "type": "string", "format": "date-time" },
+        "completed_at": { "type": "string", "format": "date-time" },
+        "total_rows": { "type": "number" },
+        "created_count": { "type": "number" },
+        "updated_count": { "type": "number" },
+        "skipped_count": { "type": "number" },
+        "error_count": { "type": "number" },
+        "status": { "type": "string", "enum": ["Processing", "Completed", "Completed With Errors", "Failed"] },
+        "mode": { "type": "string", "enum": ["create_only", "create_and_update"] },
+        "duplicate_action": { "type": "string", "enum": ["skip", "import_anyway", "update_existing"] }
+      },
+      "required": ["id", "import_type", "file_name", "initiated_by", "started_at", "status"]
+    }
+  },
+  "firestore": {
+    "/import_jobs/{jobId}": {
+      "schema": "ImportJob",
+      "description": "Historical records of batch CSV and Excel import jobs executed by administrators"
+    },
+    "/not_duplicates/{pairId}": {
+      "schema": "NotDuplicate",
+      "description": "Dismissed duplicate record pairs approved by administrators"
+    },
+    "/tags/{tagId}": {
+      "schema": "Tag",
+      "description": "Global CRM tags collection manageable by administrators and assignable to Leads and Clients"
+    },
+    "/saved_segments/{segmentId}": {
+      "schema": "SavedSegment",
+      "description": "Saved customer and lead segment rules created by administrators for smart cohort analysis"
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Converted customer accounts with sales ownership and direct links to historical leads"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile records with role and activation status"
+    },
+    "/leads/{leadId}": {
+      "schema": "Lead",
+      "description": "Lead and customer records"
+    },
+    "/leads/{leadId}/activities/{activityId}": {
+      "schema": "LeadActivity",
+      "description": "Lead interaction history subcollection"
+    },
+    "/leads/{leadId}/followups/{followupId}": {
+      "schema": "FollowUp",
+      "description": "Lead follow-up records subcollection"
+    },
+    "/leads/{leadId}/attachments/{attachmentId}": {
+      "schema": "Attachment",
+      "description": "Lead file attachments metadata subcollection"
+    },
+    "/followups/{followupId}": {
+      "schema": "FollowUp",
+      "description": "Root-level follow-up tasks collection for global center queries"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User notifications and follow-up reminders"
+    },
+    "/audit_logs/{auditLogId}": {
+      "schema": "AuditLog",
+      "description": "Immutable administrative audit and security logs"
+    }
+  }
+}

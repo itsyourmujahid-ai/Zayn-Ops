@@ -1,0 +1,562 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect } from 'react';
+import { NavigationView } from './types/crm';
+import { AppLayout } from './components/layout/AppLayout';
+import { QuickAddLeadModal } from './components/common/QuickAddLeadModal';
+import { ToastContainer, ToastMessage } from './components/common/Toast';
+import { ToastProvider } from './context/ToastContext';
+import { ThemeProvider } from './context/ThemeContext';
+import { DashboardPage } from './pages/DashboardPage';
+import { LeadsPage } from './pages/LeadsPage';
+import { LeadDetailsPage } from './pages/LeadDetailsPage';
+import { ClientsPage } from './pages/ClientsPage';
+import { ClientDetailsPage } from './pages/ClientDetailsPage';
+import { PipelinePage } from './pages/PipelinePage';
+import { FollowupsPage } from './pages/FollowupsPage';
+import { ReportsPage } from './pages/ReportsPage';
+import { NotificationsPage } from './pages/NotificationsPage';
+import { AuditPage } from './pages/AuditPage';
+import { DataQualityPage } from './pages/DataQualityPage';
+import { DataManagementPage } from './pages/DataManagementPage';
+import { SettingsPage } from './pages/SettingsPage';
+import { SearchPage } from './pages/SearchPage';
+import { SegmentsPage } from './pages/SegmentsPage';
+import { CalendarPage } from './pages/CalendarPage';
+import { GlobalSearchModal } from './components/search/GlobalSearchModal';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthPage } from './pages/AuthPage';
+import { Compass } from 'lucide-react';
+import { LeadRecord } from './types/database';
+import { recordSecurityAuditLog } from './lib/dal';
+
+import { FollowupTab } from './pages/FollowupsPage';
+
+const AuthenticatedCRM: React.FC = () => {
+  const { currentUser, userProfile, loading, isActive, signOut } = useAuth();
+  const [currentView, setCurrentView] = useState<NavigationView>('dashboard');
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [isAddLeadModalOpen, setIsAddLeadModalOpen] = useState<boolean>(false);
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState<boolean>(false);
+  const [searchQueryParam, setSearchQueryParam] = useState<string>('');
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  // Global Keyboard Shortcuts for Unified CRM Search (/ or Ctrl+K / Cmd+K)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInput =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable);
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsSearchModalOpen((prev) => !prev);
+        return;
+      }
+
+      if (e.key === '/' && !isInput) {
+        e.preventDefault();
+        setIsSearchModalOpen(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Navigation Filter States
+  const [leadsFilter, setLeadsFilter] = useState<{
+    stage?: string;
+    priority?: string;
+    salesman?: string;
+  }>({});
+  const [followupFilter, setFollowupFilter] = useState<{
+    tab?: FollowupTab;
+    salesman?: string;
+  }>({});
+
+  // Sync initial URL path (e.g. /leads/lead_123, /clients/client_123, /search)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      if (path.startsWith('/leads/')) {
+        const id = path.replace('/leads/', '').trim();
+        if (id) {
+          setSelectedLeadId(id);
+          setCurrentView('leads');
+        }
+      } else if (path.startsWith('/clients/')) {
+        const id = path.replace('/clients/', '').trim();
+        if (id) {
+          setSelectedClientId(id);
+          setCurrentView('clients');
+        }
+      } else if (path === '/clients') {
+        setCurrentView('clients');
+      } else if (path === '/segments') {
+        setCurrentView('segments');
+      } else if (path === '/search' || path.startsWith('/search')) {
+        const params = new URLSearchParams(window.location.search);
+        setSearchQueryParam(params.get('q') || '');
+        setCurrentView('search');
+      } else if (path === '/calendar') {
+        setCurrentView('calendar');
+      } else if (path === '/data-management') {
+        if (userProfile?.role === 'ADMIN') {
+          setCurrentView('data-management');
+        } else {
+          addToast(
+            'error',
+            'Access Denied',
+            'Administrator credentials required to access Data Management.'
+          );
+          recordSecurityAuditLog({
+            action: 'security_unauthorized_action',
+            description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted direct URL navigation to /data-management.`,
+            metadata: { path, user_role: userProfile?.role || 'SALESMAN', blocked: true },
+          });
+          window.history.replaceState({}, '', '/');
+        }
+      } else if (path === '/audit' || path === '/audit-logs') {
+        if (userProfile?.role === 'ADMIN') {
+          setCurrentView('audit');
+        } else {
+          addToast(
+            'error',
+            'Access Denied',
+            'Administrator credentials required to access system Audit Logs.'
+          );
+          recordSecurityAuditLog({
+            action: 'security_unauthorized_action',
+            description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted direct URL navigation to /audit.`,
+            metadata: { path, user_role: userProfile?.role || 'SALESMAN', blocked: true },
+          });
+          window.history.replaceState({}, '', '/');
+        }
+      }
+
+      const handlePopState = () => {
+        const currentPath = window.location.pathname;
+        if (currentPath.startsWith('/leads/')) {
+          const id = currentPath.replace('/leads/', '').trim();
+          setSelectedLeadId(id || null);
+          setSelectedClientId(null);
+          setCurrentView('leads');
+        } else if (currentPath.startsWith('/clients/')) {
+          const id = currentPath.replace('/clients/', '').trim();
+          setSelectedClientId(id || null);
+          setSelectedLeadId(null);
+          setCurrentView('clients');
+        } else if (currentPath === '/clients') {
+          setSelectedClientId(null);
+          setSelectedLeadId(null);
+          setCurrentView('clients');
+        } else if (currentPath === '/segments') {
+          setSelectedClientId(null);
+          setSelectedLeadId(null);
+          setCurrentView('segments');
+        } else if (currentPath === '/search' || currentPath.startsWith('/search')) {
+          const params = new URLSearchParams(window.location.search);
+          setSearchQueryParam(params.get('q') || '');
+          setSelectedClientId(null);
+          setSelectedLeadId(null);
+          setCurrentView('search');
+        } else if (currentPath === '/calendar') {
+          setSelectedClientId(null);
+          setSelectedLeadId(null);
+          setCurrentView('calendar');
+        } else if (currentPath === '/data-management') {
+          setSelectedClientId(null);
+          setSelectedLeadId(null);
+          if (userProfile?.role === 'ADMIN') {
+            setCurrentView('data-management');
+          } else {
+            setCurrentView('dashboard');
+          }
+        } else if (currentPath === '/audit' || currentPath === '/audit-logs') {
+          if (userProfile?.role === 'ADMIN') {
+            setCurrentView('audit');
+          } else {
+            setCurrentView('dashboard');
+          }
+        } else {
+          setSelectedLeadId(null);
+          setSelectedClientId(null);
+        }
+      };
+
+      window.addEventListener('popstate', handlePopState);
+      return () => window.removeEventListener('popstate', handlePopState);
+    }
+  }, []);
+
+  const handleSelectLead = (leadId: string) => {
+    setSelectedClientId(null);
+    setSelectedLeadId(leadId);
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.pushState({ leadId }, '', `/leads/${leadId}`);
+    }
+  };
+
+  const handleDeselectLead = () => {
+    setSelectedLeadId(null);
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.pushState({}, '', '/');
+    }
+  };
+
+  const handleSelectClient = (clientId: string) => {
+    setSelectedLeadId(null);
+    setSelectedClientId(clientId);
+    setCurrentView('clients');
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.pushState({ clientId }, '', `/clients/${clientId}`);
+    }
+  };
+
+  const handleDeselectClient = () => {
+    setSelectedClientId(null);
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.pushState({}, '', '/clients');
+    }
+  };
+
+  const handleViewChange = (
+    view: NavigationView,
+    options?: {
+      leadFilter?: { stage?: string; priority?: string; salesman?: string };
+      followupTab?: FollowupTab;
+      salesman?: string;
+    }
+  ) => {
+    // Phase M: RBAC Security check for Audit Logs navigation
+    if (view === 'audit' && userProfile?.role !== 'ADMIN') {
+      addToast(
+        'error',
+        'Access Denied',
+        'Administrator credentials required to access system Audit Logs.'
+      );
+      recordSecurityAuditLog({
+        action: 'security_unauthorized_action',
+        description: `Security Notice: Salesman ${userProfile?.full_name || 'Unknown'} attempted unauthorized navigation to Audit Logs.`,
+        metadata: { attempted_view: 'audit', user_role: userProfile?.role || 'SALESMAN', status: 'BLOCKED' },
+      });
+      return;
+    }
+
+    if (view === 'data-management' && userProfile?.role !== 'ADMIN') {
+      addToast(
+        'error',
+        'Access Denied',
+        'Administrator credentials required to access Data Management.'
+      );
+      recordSecurityAuditLog({
+        action: 'security_unauthorized_action',
+        description: `Security Notice: Salesman ${userProfile?.full_name || 'Unknown'} attempted unauthorized navigation to Data Management.`,
+        metadata: { attempted_view: 'data-management', user_role: userProfile?.role || 'SALESMAN', status: 'BLOCKED' },
+      });
+      return;
+    }
+
+    setSelectedLeadId(null);
+    setSelectedClientId(null);
+    if (typeof window !== 'undefined' && window.history) {
+      if (view === 'clients') {
+        window.history.pushState({}, '', '/clients');
+      } else if (view === 'calendar') {
+        window.history.pushState({}, '', '/calendar');
+      } else if (view === 'data-management') {
+        window.history.pushState({}, '', '/data-management');
+      } else if (view === 'search') {
+        window.history.pushState(
+          {},
+          '',
+          searchQueryParam ? `/search?q=${encodeURIComponent(searchQueryParam)}` : '/search'
+        );
+      } else {
+        window.history.pushState({}, '', '/');
+      }
+    }
+
+    if (options?.leadFilter) {
+      setLeadsFilter(options.leadFilter);
+    } else if (view === 'leads') {
+      setLeadsFilter({});
+    }
+
+    if (options?.followupTab || options?.salesman) {
+      setFollowupFilter({
+        tab: options.followupTab,
+        salesman: options.salesman,
+      });
+    } else if (view === 'followups') {
+      setFollowupFilter({});
+    }
+
+    setCurrentView(view);
+  };
+
+  const addToast = (type: 'success' | 'error' | 'info', title: string, message?: string) => {
+    const newToast: ToastMessage = {
+      id: 'toast_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      type,
+      title,
+      message,
+    };
+    setToasts((prev) => [...prev, newToast]);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  // While verifying session persistence on initial load, do not flash protected content
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="text-center space-y-3">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-white animate-pulse">
+            <Compass className="h-6 w-6" />
+          </div>
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            Verifying Session &amp; Connecting Database...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If unauthenticated, redirect strictly to AuthPage
+  if (!currentUser) {
+    return <AuthPage />;
+  }
+
+  // If user account has been disabled by Admin
+  if (userProfile && !isActive) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-xs">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
+            <Compass className="h-6 w-6" />
+          </div>
+          <h2 className="mt-4 text-xl font-bold text-slate-900">Account Disabled</h2>
+          <p className="mt-2 text-xs text-slate-500 leading-relaxed">
+            Your salesman account ({currentUser.email}) has been deactivated by the system Administrator. Please contact your CRM administrator to restore access.
+          </p>
+          <button
+            type="button"
+            onClick={signOut}
+            className="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white hover:bg-slate-800 transition cursor-pointer"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const handleOpenAddLead = () => {
+    setIsAddLeadModalOpen(true);
+  };
+
+  const handleCloseAddLead = () => {
+    setIsAddLeadModalOpen(false);
+  };
+
+  const handleLeadCreatedSuccess = (createdLead?: LeadRecord) => {
+    addToast(
+      'success',
+      'Lead Saved Successfully',
+      createdLead?.company_name
+        ? `${createdLead.company_name} was saved to the CRM pipeline.`
+        : 'New lead record added.'
+    );
+  };
+
+  const renderActiveView = () => {
+    // If a lead is currently selected, render the full Lead Details Page
+    if (selectedLeadId) {
+      return (
+        <LeadDetailsPage
+          leadId={selectedLeadId}
+          onBack={handleDeselectLead}
+          onNavigateToClient={(clientId) => {
+            setSelectedLeadId(null);
+            handleSelectClient(clientId);
+          }}
+        />
+      );
+    }
+
+    switch (currentView) {
+      case 'dashboard':
+        return (
+          <DashboardPage
+            onSelectView={handleViewChange}
+            onOpenAddLead={handleOpenAddLead}
+            onSelectLead={handleSelectLead}
+          />
+        );
+      case 'leads':
+        return (
+          <LeadsPage
+            onOpenAddLead={handleOpenAddLead}
+            onSelectLead={handleSelectLead}
+            initialStage={leadsFilter.stage}
+            initialPriority={leadsFilter.priority}
+            initialSalesman={leadsFilter.salesman}
+          />
+        );
+      case 'clients':
+        if (selectedClientId) {
+          return (
+            <ClientDetailsPage
+              clientId={selectedClientId}
+              onBack={handleDeselectClient}
+              onNavigateToLead={handleSelectLead}
+            />
+          );
+        }
+        return (
+          <ClientsPage
+            onSelectClient={handleSelectClient}
+            onNavigateToLead={handleSelectLead}
+          />
+        );
+      case 'calendar':
+        return (
+          <CalendarPage
+            onSelectLead={handleSelectLead}
+            onSelectClient={handleSelectClient}
+          />
+        );
+      case 'segments':
+        return (
+          <SegmentsPage
+            onNavigateToLead={handleSelectLead}
+            onNavigateToClient={handleSelectClient}
+            onNavigateToSettingsTags={() => handleViewChange('settings')}
+          />
+        );
+      case 'pipeline':
+        return (
+          <PipelinePage
+            onOpenAddLead={handleOpenAddLead}
+            onSelectLead={handleSelectLead}
+          />
+        );
+      case 'followups':
+        return (
+          <FollowupsPage
+            onOpenAddLead={handleOpenAddLead}
+            onSelectLead={handleSelectLead}
+            initialTab={followupFilter.tab}
+            initialSalesman={followupFilter.salesman}
+          />
+        );
+      case 'reports':
+        return (
+          <ReportsPage
+            onSelectLead={handleSelectLead}
+            onSelectView={handleViewChange}
+          />
+        );
+      case 'notifications':
+        return (
+          <NotificationsPage
+            onSelectLead={handleSelectLead}
+            onNavigateToFollowups={() => handleViewChange('followups')}
+          />
+        );
+      case 'audit':
+        return <AuditPage onSelectLead={handleSelectLead} />;
+      case 'data-quality':
+        return (
+          <DataQualityPage
+            onNavigateToLead={handleSelectLead}
+            onNavigateToClient={handleSelectClient}
+          />
+        );
+      case 'data-management':
+        return (
+          <DataManagementPage
+            onNavigateToLead={handleSelectLead}
+            onNavigateToClient={handleSelectClient}
+            onNavigateToLeads={() => handleViewChange('leads')}
+            onNavigateToClients={() => handleViewChange('clients')}
+          />
+        );
+      case 'settings':
+        return <SettingsPage />;
+      case 'search':
+        return (
+          <SearchPage
+            initialQuery={searchQueryParam}
+            onSelectLead={handleSelectLead}
+            onSelectClient={handleSelectClient}
+          />
+        );
+      default:
+        return (
+          <DashboardPage
+            onSelectView={handleViewChange}
+            onOpenAddLead={handleOpenAddLead}
+            onSelectLead={handleSelectLead}
+          />
+        );
+    }
+  };
+
+  return (
+    <AppLayout
+      currentView={currentView}
+      onSelectView={handleViewChange}
+      onOpenAddLead={handleOpenAddLead}
+      onSelectLead={handleSelectLead}
+      onOpenSearch={() => setIsSearchModalOpen(true)}
+    >
+      {renderActiveView()}
+
+      {/* Global Command Palette & Unified Search Modal */}
+      <GlobalSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        onSelectLead={handleSelectLead}
+        onSelectClient={handleSelectClient}
+        onNavigateToSearchPage={(query) => {
+          setSearchQueryParam(query);
+          handleViewChange('search');
+        }}
+      />
+
+      {/* Global Quick Add Lead Modal */}
+      <QuickAddLeadModal
+        isOpen={isAddLeadModalOpen}
+        onClose={handleCloseAddLead}
+        onSuccess={handleLeadCreatedSuccess}
+      />
+
+      {/* Global Toast Notifications */}
+      <ToastContainer toasts={toasts} onDismiss={removeToast} />
+    </AppLayout>
+  );
+};
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <AuthenticatedCRM />
+        </ToastProvider>
+      </AuthProvider>
+    </ThemeProvider>
+  );
+}

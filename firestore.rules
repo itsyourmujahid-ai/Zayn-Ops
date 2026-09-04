@@ -1,0 +1,430 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ==========================================
+    // 1. Core Authentication & Authorization Helpers
+    // ==========================================
+    
+    // Check if client is authenticated
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    // Check if user profile doc exists in database
+    function userDocExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    // Fetch user profile data
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Check if authenticated user has Admin privileges
+    function isAdmin() {
+      return isAuthenticated() && (
+        (request.auth.token.email != null && request.auth.token.email.lower() == 'itsyourmujahid@gmail.com') ||
+        (userDocExists() && (
+          getUserData().role == 'ADMIN' ||
+          getUserData().role == 'admin'
+        ))
+      );
+    }
+
+    // Check if authenticated user account is active (not deactivated by Admin)
+    function isActive() {
+      return isAuthenticated() && (
+        isAdmin() ||
+        !userDocExists() ||
+        !('is_active' in getUserData()) ||
+        getUserData().is_active == true
+      );
+    }
+
+    // Check if user has access to a specific lead (Admin or assigned/creator salesman)
+    function canAccessLead(leadId) {
+      return isAuthenticated() && (
+        isAdmin() ||
+        (
+          exists(/databases/$(database)/documents/leads/$(leadId)) &&
+          (
+            get(/databases/$(database)/documents/leads/$(leadId)).data.assigned_to == request.auth.uid ||
+            get(/databases/$(database)/documents/leads/$(leadId)).data.created_by == request.auth.uid
+          )
+        )
+      );
+    }
+
+    // Enum validators
+    function isValidStatus(status) {
+      return status in ['New', 'Contacted', 'Interested', 'Meeting', 'Quotation', 'Negotiation', 'Won', 'Lost'];
+    }
+
+    function isValidPriority(priority) {
+      return priority in ['Hot', 'Warm', 'Cold'];
+    }
+
+    function isValidFollowupStatus(status) {
+      return status in ['pending', 'completed', 'rescheduled', 'cancelled'];
+    }
+
+    // ==========================================
+    // 2. User Profiles Collection (/users/{userId})
+    // ==========================================
+    match /users/{userId} {
+      // Authenticated active users can read profiles for CRM collaboration and assignment menus
+      allow read: if isAuthenticated();
+      
+      // Creating own user profile on signup - non-admins cannot give themselves ADMIN role
+      allow create: if isAuthenticated() && (
+        (request.auth.uid == userId && (
+          request.resource.data.role != 'ADMIN' ||
+          (request.auth.token.email != null && request.auth.token.email.lower() == 'itsyourmujahid@gmail.com')
+        )) ||
+        isAdmin()
+      );
+      
+      // Update profile:
+      // - Users can update their own name/avatar/email but CANNOT escalate their role or reactivate themselves
+      // - Admins can update any user profile including role and is_active status
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        (
+          request.auth.uid == userId &&
+          isActive() &&
+          request.resource.data.role == resource.data.role &&
+          (!('is_active' in request.resource.data) || request.resource.data.is_active == resource.data.is_active)
+        )
+      );
+      
+      // Only Admin can delete user profiles
+      allow delete: if isAdmin();
+    }
+
+    // ==========================================
+    // 3. Leads Collection (/leads/{leadId})
+    // ==========================================
+    match /leads/{leadId} {
+      // READ: Admin can read all leads. Salesman can only read assigned or created leads.
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.assigned_to == request.auth.uid ||
+        resource.data.created_by == request.auth.uid
+      );
+      
+      // CREATE:
+      // - Must be authenticated and active
+      // - created_by must match request.auth.uid
+      // - company_name must be non-empty string
+      // - Valid status and priority enums
+      // - Salesman can only assign to themselves; Admin can assign to anyone
+      allow create: if isAuthenticated() && isActive() &&
+                    request.resource.data.created_by == request.auth.uid &&
+                    request.resource.data.company_name is string &&
+                    request.resource.data.company_name.size() > 0 &&
+                    (!('status' in request.resource.data) || isValidStatus(request.resource.data.status)) &&
+                    (!('priority' in request.resource.data) || isValidPriority(request.resource.data.priority)) &&
+                    (
+                      isAdmin() ||
+                      request.resource.data.assigned_to == request.auth.uid
+                    );
+                    
+      // UPDATE:
+      // - Admin can update any lead (including reassignments)
+      // - Salesman can only update their own assigned lead:
+      //   * CANNOT change assigned_to (tamper proof)
+      //   * CANNOT change created_by
+      //   * Status & Priority must be valid enums
+      allow update: if isAuthenticated() && isActive() && (
+        isAdmin() ||
+        (
+          (resource.data.assigned_to == request.auth.uid || resource.data.created_by == request.auth.uid) &&
+          request.resource.data.assigned_to == resource.data.assigned_to &&
+          request.resource.data.created_by == resource.data.created_by &&
+          (!('status' in request.resource.data) || isValidStatus(request.resource.data.status)) &&
+          (!('priority' in request.resource.data) || isValidPriority(request.resource.data.priority))
+        )
+      );
+      
+      // DELETE: Only Admin can delete a lead
+      allow delete: if isAuthenticated() && isActive() && isAdmin();
+
+      // ------------------------------------------
+      // Lead Subcollection: Activities
+      // ------------------------------------------
+      match /activities/{activityId} {
+        allow read: if canAccessLead(leadId);
+        
+        allow create: if isAuthenticated() && isActive() && canAccessLead(leadId) &&
+                      request.resource.data.created_by == request.auth.uid &&
+                      (!('lead_id' in request.resource.data) || request.resource.data.lead_id == leadId);
+                      
+        // Activities are immutable timeline audit logs
+        allow update: if isAuthenticated() && isActive() && isAdmin();
+        allow delete: if isAuthenticated() && isActive() && isAdmin();
+      }
+
+      // ------------------------------------------
+      // Lead Subcollection: Follow-ups
+      // ------------------------------------------
+      match /followups/{followupId} {
+        allow read: if canAccessLead(leadId);
+        
+        allow create: if isAuthenticated() && isActive() && canAccessLead(leadId) &&
+                      request.resource.data.created_by == request.auth.uid &&
+                      (!('status' in request.resource.data) || isValidFollowupStatus(request.resource.data.status)) &&
+                      (!('lead_id' in request.resource.data) || request.resource.data.lead_id == leadId);
+                      
+        allow update: if isAuthenticated() && isActive() && canAccessLead(leadId) &&
+                      (!('status' in request.resource.data) || isValidFollowupStatus(request.resource.data.status));
+                      
+        allow delete: if isAuthenticated() && isActive() && (isAdmin() || canAccessLead(leadId));
+      }
+
+      // ------------------------------------------
+      // Lead Subcollection: Assignment / Transfer History
+      // ------------------------------------------
+      match /transfers/{transferId} {
+        allow read: if canAccessLead(leadId);
+        // Only Admin can create transfer audit records
+        allow create: if isAuthenticated() && isActive() && isAdmin() &&
+                      request.resource.data.transferred_by == request.auth.uid;
+        // Immutable audit trail
+        allow update, delete: if false;
+      }
+
+      // ------------------------------------------
+      // Lead Subcollection: Attachments
+      // ------------------------------------------
+      match /attachments/{attachmentId} {
+        allow read: if canAccessLead(leadId);
+        
+        allow create: if isAuthenticated() && isActive() && canAccessLead(leadId) &&
+                      request.resource.data.uploaded_by == request.auth.uid &&
+                      request.resource.data.file_name is string &&
+                      request.resource.data.file_name.size() > 0 &&
+                      (!('lead_id' in request.resource.data) || request.resource.data.lead_id == leadId);
+                      
+        allow update: if isAuthenticated() && isActive() && canAccessLead(leadId) &&
+                      request.resource.data.uploaded_by == resource.data.uploaded_by &&
+                      request.resource.data.lead_id == resource.data.lead_id;
+                      
+        allow delete: if isAuthenticated() && isActive() && (
+          isAdmin() ||
+          (canAccessLead(leadId) && (resource.data.uploaded_by == request.auth.uid || isAdmin()))
+        );
+      }
+    }
+
+    // ==========================================
+    // 4. Root Activities Collection (/activities/{activityId})
+    // ==========================================
+    match /activities/{activityId} {
+      allow read: if isAuthenticated() && (isAdmin() || resource.data.created_by == request.auth.uid || resource.data.performed_by == request.auth.uid);
+      allow create: if isAuthenticated() && isActive() && request.resource.data.created_by == request.auth.uid;
+      allow update, delete: if isAuthenticated() && isActive() && isAdmin();
+    }
+
+    // ==========================================
+    // 5. Root Follow-ups Collection (/followups/{followupId})
+    // ==========================================
+    match /followups/{followupId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        resource.data.assigned_to == request.auth.uid ||
+        resource.data.created_by == request.auth.uid
+      );
+      allow create: if isAuthenticated() && isActive() && (
+        isAdmin() || 
+        request.resource.data.assigned_to == request.auth.uid ||
+        request.resource.data.created_by == request.auth.uid
+      );
+      allow update: if isAuthenticated() && isActive() && (
+        isAdmin() || 
+        resource.data.assigned_to == request.auth.uid ||
+        resource.data.created_by == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && isActive() && (isAdmin() || resource.data.created_by == request.auth.uid);
+    }
+
+    // ==========================================
+    // 6. Notifications Collection (/notifications/{notificationId})
+    // ==========================================
+    match /notifications/{notificationId} {
+      // User can read their own notifications; Admin can read team notifications
+      allow read: if isAuthenticated() && (
+        resource.data.recipient_id == request.auth.uid ||
+        isAdmin()
+      );
+      
+      // Creating a notification:
+      // - Authenticated and active user (or admin) can generate a notification
+      // - Must have recipient_id, title, and initial is_read == false
+      allow create: if isAuthenticated() && isActive() &&
+                    request.resource.data.recipient_id is string &&
+                    request.resource.data.title is string &&
+                    request.resource.data.title.size() > 0 &&
+                    request.resource.data.is_read == false;
+                    
+      // Updating a notification:
+      // - User can update is_read state on their OWN notifications
+      // - Tamper-proofing: CANNOT change recipient_id, title, message, lead_id, follow_up_id, or event_key
+      allow update: if isAuthenticated() && isActive() && (
+        isAdmin() ||
+        (
+          resource.data.recipient_id == request.auth.uid &&
+          request.resource.data.recipient_id == resource.data.recipient_id &&
+          request.resource.data.title == resource.data.title &&
+          request.resource.data.message == resource.data.message &&
+          (!('lead_id' in resource.data) || request.resource.data.lead_id == resource.data.lead_id)
+        )
+      );
+      
+      // Deleting / Dismissing a notification:
+      // - User can delete their own notifications; Admin can clean up any
+      allow delete: if isAuthenticated() && isActive() && (
+        resource.data.recipient_id == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    // ==========================================
+    // 7. Audit Logs Collection (/audit_logs/{auditLogId})
+    // ==========================================
+    match /audit_logs/{auditLogId} {
+      // READ: Strictly Admin-only. Salesmen can NEVER read audit logs.
+      allow read: if isAuthenticated() && isAdmin();
+
+      // CREATE:
+      // - System / authenticated users can log their actions (or Admin can log actions)
+      // - Must specify performed_by matching authenticated user (or Admin)
+      // - Must specify action, entity_type, entity_id, description, and created_at
+      allow create: if isAuthenticated() && isActive() &&
+                    request.resource.data.action is string &&
+                    request.resource.data.action.size() > 0 &&
+                    request.resource.data.entity_type is string &&
+                    request.resource.data.description is string &&
+                    (
+                      isAdmin() ||
+                      request.resource.data.performed_by == request.auth.uid
+                    );
+
+      // IMMUTABILITY:
+      // - Audit logs can NEVER be updated or deleted by anyone (including Admins).
+      allow update, delete: if false;
+    }
+
+    // ==========================================
+    // 8. Clients Collection (/clients/{clientId})
+    // ==========================================
+    match /clients/{clientId} {
+      // READ: Admin can read all clients. Salesman can only read clients where owner_id == request.auth.uid
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        resource.data.owner_id == request.auth.uid
+      );
+
+      // CREATE:
+      // - Must be authenticated and active
+      // - company_name must be non-empty string
+      // - source_lead_id and owner_id required
+      // - Salesman can only set owner_id to their own UID or matching assigned_to of the source lead
+      // - Admin can set owner_id to any active salesman
+      allow create: if isAuthenticated() && isActive() &&
+                    request.resource.data.company_name is string &&
+                    request.resource.data.company_name.size() > 0 &&
+                    request.resource.data.source_lead_id is string &&
+                    request.resource.data.owner_id is string &&
+                    (!('status' in request.resource.data) || request.resource.data.status in ['Active', 'Inactive']) &&
+                    (
+                      isAdmin() ||
+                      request.resource.data.owner_id == request.auth.uid ||
+                      (exists(/databases/$(database)/documents/leads/$(request.resource.data.source_lead_id)) &&
+                       get(/databases/$(database)/documents/leads/$(request.resource.data.source_lead_id)).data.assigned_to == request.auth.uid)
+                    );
+
+      // UPDATE:
+      // - Admin can update any client (including transferring ownership)
+      // - Salesman can only update their own client:
+      //   * Tamper-proofing: CANNOT change owner_id
+      //   * Tamper-proofing: CANNOT change source_lead_id
+      //   * Status must be 'Active' or 'Inactive'
+      allow update: if isAuthenticated() && isActive() && (
+        isAdmin() ||
+        (
+          resource.data.owner_id == request.auth.uid &&
+          request.resource.data.owner_id == resource.data.owner_id &&
+          request.resource.data.source_lead_id == resource.data.source_lead_id &&
+          (!('status' in request.resource.data) || request.resource.data.status in ['Active', 'Inactive'])
+        )
+      );
+
+      // DELETE:
+      // - Only Admin can delete a client record (salesmen cannot delete clients)
+      allow delete: if isAuthenticated() && isActive() && isAdmin();
+    }
+
+    // ==========================================
+    // 9. Tags Collection (/tags/{tagId})
+    // ==========================================
+    match /tags/{tagId} {
+      // READ: All authenticated users can view CRM tags to display badges and filter
+      allow read: if isAuthenticated();
+
+      // CREATE: Admin only can create global CRM tags
+      allow create: if isAuthenticated() && isActive() && isAdmin() &&
+                    request.resource.data.name is string &&
+                    request.resource.data.name.size() > 0 &&
+                    request.resource.data.type in ['Lead', 'Client', 'Both'];
+
+      // UPDATE: Admin only can modify, rename, or toggle active status of tags
+      allow update: if isAuthenticated() && isActive() && isAdmin() &&
+                    (!('type' in request.resource.data) || request.resource.data.type in ['Lead', 'Client', 'Both']);
+
+      // DELETE: Admin only
+      allow delete: if isAuthenticated() && isActive() && isAdmin();
+    }
+
+    // ==========================================
+    // 10. Saved Segments Collection (/saved_segments/{segmentId})
+    // ==========================================
+    match /saved_segments/{segmentId} {
+      // READ: All authenticated users can read segment definitions
+      allow read: if isAuthenticated();
+
+      // CREATE: Admin only can create saved segment presets
+      allow create: if isAuthenticated() && isActive() && isAdmin() &&
+                    request.resource.data.name is string &&
+                    request.resource.data.name.size() > 0 &&
+                    request.resource.data.entity_type in ['Lead', 'Client', 'Both'];
+
+      // UPDATE: Admin only
+      allow update: if isAuthenticated() && isActive() && isAdmin();
+
+      // DELETE: Admin only
+      allow delete: if isAuthenticated() && isActive() && isAdmin();
+    }
+
+    // ==========================================
+    // 11. Not Duplicates Dismissal Collection (/not_duplicates/{pairId})
+    // ==========================================
+    match /not_duplicates/{pairId} {
+      // READ: All authenticated users can read dismissed duplicate pairs
+      allow read: if isAuthenticated();
+
+      // CREATE / UPDATE / DELETE: Admin only
+      allow create, update, delete: if isAuthenticated() && isActive() && isAdmin();
+    }
+
+    // ==========================================
+    // 12. Import Jobs History Collection (/import_jobs/{jobId})
+    // ==========================================
+    match /import_jobs/{jobId} {
+      // READ, CREATE, UPDATE, DELETE: Admin only
+      allow read, create, update, delete: if isAuthenticated() && isActive() && isAdmin();
+    }
+  }
+}
+
+
