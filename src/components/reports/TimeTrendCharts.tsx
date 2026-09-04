@@ -35,27 +35,27 @@ export const TimeTrendCharts: React.FC<TimeTrendChartsProps> = ({
   );
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-xs p-5 space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3">
+    <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] shadow-xs p-5 space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[var(--border-subtle)] pb-3">
         <div>
           <div className="flex items-center gap-2">
-            <TrendingUp className="h-4.5 w-4.5 text-indigo-600" />
-            <h3 className="text-sm font-bold text-slate-900">Historical Trends &amp; Velocity Over Time</h3>
+            <TrendingUp className="h-4.5 w-4.5 text-[var(--color-primary)]" />
+            <h3 className="text-sm font-bold text-[var(--text-main)]">Historical Trends &amp; Velocity Over Time</h3>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs text-[var(--text-muted)] mt-0.5">
             Temporal distribution of new leads, win events, customer interactions, and task completions
           </p>
         </div>
 
         {/* Tab Controls */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+        <div className="flex items-center gap-1 bg-[var(--bg-elevated)] p-1 rounded-lg border border-[var(--border-color)]">
           <button
             type="button"
             onClick={() => setActiveTab('leads')}
             className={`px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
               activeTab === 'leads'
-                ? 'bg-white text-indigo-600 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-[var(--bg-card)] text-[var(--color-primary)] shadow-xs border border-[var(--color-primary-border)]'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-main)]'
             }`}
           >
             Leads &amp; Wins
@@ -65,8 +65,8 @@ export const TimeTrendCharts: React.FC<TimeTrendChartsProps> = ({
             onClick={() => setActiveTab('activities')}
             className={`px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
               activeTab === 'activities'
-                ? 'bg-white text-purple-600 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-[var(--bg-card)] text-[#C084FC] shadow-xs border border-[rgba(168,85,247,0.4)]'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-main)]'
             }`}
           >
             Activity Volume
@@ -76,8 +76,8 @@ export const TimeTrendCharts: React.FC<TimeTrendChartsProps> = ({
             onClick={() => setActiveTab('followups')}
             className={`px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
               activeTab === 'followups'
-                ? 'bg-white text-emerald-600 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-[var(--bg-card)] text-[#34D399] shadow-xs border border-[rgba(16,185,129,0.4)]'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-main)]'
             }`}
           >
             Follow-up Resolutions
@@ -86,8 +86,8 @@ export const TimeTrendCharts: React.FC<TimeTrendChartsProps> = ({
       </div>
 
       {!hasData ? (
-        <div className="h-64 flex flex-col items-center justify-center text-slate-400 text-xs">
-          <Calendar className="h-8 w-8 text-slate-300 mb-2" />
+        <div className="h-64 flex flex-col items-center justify-center text-[var(--text-muted)] text-xs">
+          <Calendar className="h-8 w-8 text-[var(--text-disabled)] mb-2" />
           No historical activity recorded in this date range.
         </div>
       ) : (
@@ -100,44 +100,47 @@ export const TimeTrendCharts: React.FC<TimeTrendChartsProps> = ({
               >
                 <defs>
                   <linearGradient id="colorCreated" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
+                    <stop offset="5%" stopColor="var(--color-primary)" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="var(--color-primary)" stopOpacity={0.0} />
                   </linearGradient>
                   <linearGradient id="colorWon" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#10b981" stopOpacity={0.5} />
                     <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
                 <XAxis
                   dataKey="displayDate"
-                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
                   tickLine={false}
-                  axisLine={{ stroke: '#e2e8f0' }}
+                  axisLine={{ stroke: 'var(--border-color)' }}
                 />
                 <YAxis
                   allowDecimals={false}
-                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
                   tickLine={false}
-                  axisLine={{ stroke: '#e2e8f0' }}
+                  axisLine={{ stroke: 'var(--border-color)' }}
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: '#ffffff',
-                    borderColor: '#e2e8f0',
+                    backgroundColor: 'var(--bg-card)',
+                    borderColor: 'var(--border-color)',
                     borderRadius: '8px',
                     fontSize: '12px',
-                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                    color: 'var(--text-main)',
+                    boxShadow: '0 8px 16px var(--shadow-color)',
                   }}
+                  itemStyle={{ color: 'var(--text-main)' }}
+                  labelStyle={{ color: 'var(--text-secondary)', fontWeight: 'bold' }}
                 />
                 <Legend
-                  wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }}
+                  wrapperStyle={{ fontSize: '12px', paddingTop: '8px', color: 'var(--text-secondary)' }}
                 />
                 <Area
                   type="monotone"
                   dataKey="leadsCreated"
                   name="Leads Created"
-                  stroke="#6366f1"
+                  stroke="var(--color-primary)"
                   strokeWidth={2}
                   fillOpacity={1}
                   fill="url(#colorCreated)"
@@ -157,30 +160,33 @@ export const TimeTrendCharts: React.FC<TimeTrendChartsProps> = ({
                 data={trendPoints}
                 margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
                 <XAxis
                   dataKey="displayDate"
-                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
                   tickLine={false}
-                  axisLine={{ stroke: '#e2e8f0' }}
+                  axisLine={{ stroke: 'var(--border-color)' }}
                 />
                 <YAxis
                   allowDecimals={false}
-                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
                   tickLine={false}
-                  axisLine={{ stroke: '#e2e8f0' }}
+                  axisLine={{ stroke: 'var(--border-color)' }}
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: '#ffffff',
-                    borderColor: '#e2e8f0',
+                    backgroundColor: 'var(--bg-card)',
+                    borderColor: 'var(--border-color)',
                     borderRadius: '8px',
                     fontSize: '12px',
-                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                    color: 'var(--text-main)',
+                    boxShadow: '0 8px 16px var(--shadow-color)',
                   }}
+                  itemStyle={{ color: 'var(--text-main)' }}
+                  labelStyle={{ color: 'var(--text-secondary)', fontWeight: 'bold' }}
                 />
                 <Legend
-                  wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }}
+                  wrapperStyle={{ fontSize: '12px', paddingTop: '8px', color: 'var(--text-secondary)' }}
                 />
                 <Bar
                   dataKey="activities"
@@ -194,30 +200,33 @@ export const TimeTrendCharts: React.FC<TimeTrendChartsProps> = ({
                 data={trendPoints}
                 margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
                 <XAxis
                   dataKey="displayDate"
-                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
                   tickLine={false}
-                  axisLine={{ stroke: '#e2e8f0' }}
+                  axisLine={{ stroke: 'var(--border-color)' }}
                 />
                 <YAxis
                   allowDecimals={false}
-                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
                   tickLine={false}
-                  axisLine={{ stroke: '#e2e8f0' }}
+                  axisLine={{ stroke: 'var(--border-color)' }}
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: '#ffffff',
-                    borderColor: '#e2e8f0',
+                    backgroundColor: 'var(--bg-card)',
+                    borderColor: 'var(--border-color)',
                     borderRadius: '8px',
                     fontSize: '12px',
-                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                    color: 'var(--text-main)',
+                    boxShadow: '0 8px 16px var(--shadow-color)',
                   }}
+                  itemStyle={{ color: 'var(--text-main)' }}
+                  labelStyle={{ color: 'var(--text-secondary)', fontWeight: 'bold' }}
                 />
                 <Legend
-                  wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }}
+                  wrapperStyle={{ fontSize: '12px', paddingTop: '8px', color: 'var(--text-secondary)' }}
                 />
                 <Bar
                   dataKey="followupsCompleted"

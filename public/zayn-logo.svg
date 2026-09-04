@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <!-- White Background -->
+  <rect width="500" height="500" fill="#FFFFFF" />
+
+  <!-- Top-Left Green Geometric Triangle (#18582B) -->
+  <polygon points="45,48 235,48 45,455" fill="#18582B" />
+
+  <!-- Bottom-Right Green Geometric Triangle (#18582B) -->
+  <polygon points="455,48 455,455 265,455" fill="#18582B" />
+
+  <!-- Center Black Circular Badge -->
+  <circle cx="250" cy="250" r="80" fill="#111111" />
+
+  <!-- Center White Stylized Calligraphic Monogram Emblem -->
+  <path
+    d="M 262 192
+       C 264 192, 270 206, 266 218
+       C 260 228, 244 222, 236 230
+       C 216 242, 214 266, 226 282
+       C 238 296, 260 294, 272 284
+       L 310 286
+       L 282 230
+       C 285 245, 275 262, 260 268
+       C 246 272, 235 264, 232 254
+       C 228 240, 240 226, 252 220
+       C 256 212, 258 200, 252 195
+       Z"
+    fill="#FFFFFF"
+    fill-rule="evenodd"
+  />
+</svg>

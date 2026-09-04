@@ -4,6 +4,7 @@ import { NavigationView } from '../../types/crm';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme, ZaynOsThemeId } from '../../context/ThemeContext';
 import { NotificationBell } from '../notifications/NotificationBell';
+import { ZaynLogo } from '../common/ZaynLogo';
 
 interface TopHeaderProps {
   currentView: NavigationView;
@@ -104,9 +105,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           </kbd>
         </div>
 
-        {/* Mobile Page Title */}
-        <div className="sm:hidden">
-          <h1 className="text-sm font-bold text-[var(--text-main)] truncate max-w-[200px]">
+        {/* Mobile Page Title with Brand Mark */}
+        <div className="sm:hidden flex items-center gap-2">
+          <ZaynLogo size={28} rounded="rounded-md" className="shadow-2xs border border-[var(--border-color)]" />
+          <h1 className="text-sm font-bold text-[var(--text-main)] truncate max-w-[170px]">
             {getPageTitle(currentView)}
           </h1>
         </div>

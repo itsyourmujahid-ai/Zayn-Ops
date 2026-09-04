@@ -16,6 +16,7 @@ import {
 import { UserRole } from '../types/database';
 import { PREDEFINED_ACCOUNTS, PredefinedAccount } from '../lib/predefinedAccounts';
 import { useTheme } from '../context/ThemeContext';
+import { ZaynLogo } from '../components/common/ZaynLogo';
 
 export const AuthPage: React.FC = () => {
   const { signIn, signUp } = useAuth();
@@ -95,15 +96,12 @@ export const AuthPage: React.FC = () => {
       <div className="w-full max-w-lg space-y-6">
         {/* ZaynOs Brand Header */}
         <div className="text-center">
-          <div
-            className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg font-black text-2xl tracking-wider transition-all"
-            style={{
-              backgroundColor: 'var(--color-primary)',
-              color: 'var(--text-inverse)',
-              boxShadow: '0 8px 24px var(--shadow-color)',
-            }}
-          >
-            Z
+          <div className="mx-auto flex items-center justify-center">
+            <ZaynLogo
+              size={64}
+              rounded="rounded-2xl"
+              className="shadow-xl border border-[var(--border-color)] transition-transform hover:scale-105"
+            />
           </div>
           <div className="mt-4 flex items-center justify-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-[var(--text-main)]">

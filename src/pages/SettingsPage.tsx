@@ -22,6 +22,7 @@ import { useTheme, ZaynOsThemeId } from '../context/ThemeContext';
 import { UserProfile, UserRole } from '../types/database';
 import { getAllUsers, updateUserRole, updateUserStatus } from '../lib/dal';
 import { TagManagementSection } from '../components/TagManagementSection';
+import { ZaynLogo } from '../components/common/ZaynLogo';
 
 export const SettingsPage: React.FC = () => {
   const { userProfile, role } = useAuth();
@@ -472,21 +473,24 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Section 3: App Information */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs">
-          <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-            <div className="rounded-lg bg-emerald-50 p-2 text-emerald-600">
-              <Smartphone className="h-5 w-5" />
-            </div>
+        {/* Section 3: App & Brand Identity */}
+        <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-5 shadow-xs">
+          <div className="flex items-center gap-3 border-b border-[var(--border-subtle)] pb-3">
+            <ZaynLogo size={40} rounded="rounded-xl" className="shadow-xs border border-[var(--border-color)]" />
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Application Info</h3>
-              <p className="text-xs text-slate-500">LeadFlow CRM • Enterprise Sales Management Platform</p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-[var(--text-main)]">ZaynOs Enterprise CRM</h3>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider bg-[var(--color-primary-subtle)] text-[var(--color-primary)] border border-[var(--color-primary-border)]">
+                  Official Brand
+                </span>
+              </div>
+              <p className="text-xs text-[var(--text-muted)]">Zayn Enterprise Sales Management &amp; Client Intelligence Platform</p>
             </div>
           </div>
-          <div className="mt-3 text-xs text-slate-600 space-y-1">
-            <p><strong>Version:</strong> 2.0.0 (Phase M — Enterprise Audit Log &amp; Monitoring)</p>
-            <p><strong>Design:</strong> High-contrast responsive B2B layout</p>
-            <p><strong>Security Model:</strong> Role-Based Access Control (RBAC) + Append-Only Audit Trail</p>
+          <div className="mt-3 text-xs text-[var(--text-secondary)] space-y-1.5">
+            <p><strong className="text-[var(--text-main)]">Brand Identity:</strong> Zayn Group Official Corporate Emblem &amp; Visual System</p>
+            <p><strong className="text-[var(--text-main)]">Version:</strong> 2.4.0 (Enterprise Suite with Semantic Theme Engine)</p>
+            <p><strong className="text-[var(--text-main)]">Security Model:</strong> Role-Based Access Control (RBAC) + Append-Only Audit Trail</p>
           </div>
         </div>
       </div>

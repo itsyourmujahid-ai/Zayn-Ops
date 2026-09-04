@@ -122,20 +122,20 @@ export const ReportsKPICards: React.FC<ReportsKPICardsProps> = ({ metrics, isAdm
           <div
             key={card.id}
             id={`kpi-${card.id}`}
-            className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs flex flex-col justify-between hover:border-slate-300 transition"
+            className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4 shadow-xs flex flex-col justify-between hover:border-[var(--color-primary-border)] transition"
           >
             <div className="flex items-start justify-between gap-2">
-              <span className="text-xs font-semibold text-slate-600 line-clamp-1">{card.label}</span>
-              <div className={`p-1.5 rounded-lg ${card.bg} ${card.color}`}>
+              <span className="text-xs font-semibold text-[var(--text-secondary)] line-clamp-1">{card.label}</span>
+              <div className={`p-1.5 rounded-lg border ${card.bg} ${card.color} ${card.border}`}>
                 <IconComponent className="h-4 w-4" />
               </div>
             </div>
 
             <div className="mt-2.5">
-              <div className="text-xl font-bold tracking-tight text-slate-900 truncate">
+              <div className="text-xl font-bold tracking-tight text-[var(--text-main)] truncate">
                 {card.value}
               </div>
-              <p className="text-[11px] font-medium text-slate-500 mt-0.5 truncate">{card.subtext}</p>
+              <p className="text-[11px] font-medium text-[var(--text-muted)] mt-0.5 truncate">{card.subtext}</p>
             </div>
           </div>
         );

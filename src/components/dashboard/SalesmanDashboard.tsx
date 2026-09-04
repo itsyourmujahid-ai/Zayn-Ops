@@ -77,24 +77,24 @@ export const SalesmanDashboard: React.FC<SalesmanDashboardProps> = ({
   return (
     <div className="space-y-6 pb-12">
       {/* Welcome & Quick Actions Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-900 to-indigo-950 p-5 rounded-2xl text-white shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-[var(--border-color)] bg-[var(--bg-card)] p-5 rounded-2xl shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-indigo-300">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
               Personal Sales Workspace
             </span>
-            <span className="rounded-full bg-indigo-500/30 px-2 py-0.5 text-[10px] font-bold text-indigo-200 border border-indigo-400/30">
+            <span className="rounded-full bg-[var(--color-primary-subtle)] px-2 py-0.5 text-[10px] font-bold text-[var(--color-primary)] border border-[var(--color-primary-border)]">
               {userProfile.role}
             </span>
           </div>
-          <h2 className="text-xl font-bold mt-1 text-white">
+          <h2 className="text-xl font-bold mt-1 text-[var(--text-main)]">
             Welcome back, {firstName}
           </h2>
-          <p className="text-xs text-indigo-200/80 mt-0.5">
-            You have <strong className="text-white">{todayCount}</strong> follow-up
+          <p className="text-xs text-[var(--text-muted)] mt-0.5">
+            You have <strong className="text-[var(--text-main)] font-semibold">{todayCount}</strong> follow-up
             {todayCount !== 1 ? 's' : ''} scheduled today
             {overdueCount > 0 ? (
-              <span className="text-rose-300 font-bold ml-1">
+              <span className="text-[#F87171] font-bold ml-1">
                 and {overdueCount} overdue item{overdueCount !== 1 ? 's' : ''} requiring attention
               </span>
             ) : null}
@@ -106,7 +106,7 @@ export const SalesmanDashboard: React.FC<SalesmanDashboardProps> = ({
           <button
             type="button"
             onClick={onOpenAddLead}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-500 px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-400 transition cursor-pointer shadow-sm"
+            className="zaynos-btn-primary text-xs font-bold shadow-xs cursor-pointer"
           >
             <Sparkles className="h-3.5 w-3.5" />
             <span>Add Lead</span>

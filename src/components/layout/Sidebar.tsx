@@ -23,6 +23,7 @@ import {
 import { NavigationView } from '../../types/crm';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { ZaynLogo } from '../common/ZaynLogo';
 import {
   subscribeToUserNotifications,
   subscribeToLeads,
@@ -173,15 +174,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* ZaynOs App Branding */}
       <div className="flex h-[72px] items-center justify-between border-b border-[var(--border-color)] px-5">
         <div className="flex items-center gap-3">
-          <div
-            className="flex h-9 w-9 items-center justify-center rounded-lg shadow-sm font-black text-sm tracking-wider"
-            style={{
-              backgroundColor: 'var(--color-primary)',
-              color: 'var(--text-inverse)',
-            }}
-          >
-            Z
-          </div>
+          <ZaynLogo size={36} rounded="rounded-lg" className="shadow-xs border border-[var(--border-color)]" />
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-base font-bold tracking-tight text-[var(--text-main)]">

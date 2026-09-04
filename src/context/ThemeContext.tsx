@@ -37,7 +37,7 @@ export const ZAYNOS_THEMES: Record<ZaynOsThemeId, ZaynOsThemeConfig> = {
     bgCard: '#1E293B',
     colorPrimary: '#0EA5E9',
     textMain: '#F8FAFC',
-    textMuted: '#64748B',
+    textMuted: '#94A3B8',
     borderColor: '#334155',
   },
   'emerald-noir': {
@@ -49,7 +49,7 @@ export const ZAYNOS_THEMES: Record<ZaynOsThemeId, ZaynOsThemeConfig> = {
     bgCard: '#18181B',
     colorPrimary: '#10B981',
     textMain: '#E4E4E7',
-    textMuted: '#71717A',
+    textMuted: '#A1A1AA',
     borderColor: '#27272a',
   },
 };

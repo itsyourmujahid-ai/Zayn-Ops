@@ -38,24 +38,24 @@ export const LeadPipelineOverview: React.FC<LeadPipelineOverviewProps> = ({
   const totalLeads = leads.length;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-xs p-5 space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
+    <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] shadow-xs p-5 space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-[var(--border-subtle)] pb-3">
         <div>
           <div className="flex items-center gap-2">
-            <Layers className="h-4 w-4 text-indigo-600" />
-            <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+            <Layers className="h-4 w-4 text-[var(--color-primary)]" />
+            <h3 className="text-sm font-bold text-[var(--text-main)]">{title}</h3>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>
+          <p className="text-xs text-[var(--text-muted)] mt-0.5">{subtitle}</p>
         </div>
-        <div className="text-xs font-semibold text-slate-500">
-          Total Leads: <span className="text-slate-900 font-bold">{totalLeads}</span>
+        <div className="text-xs font-semibold text-[var(--text-muted)]">
+          Total Leads: <span className="text-[var(--text-main)] font-bold">{totalLeads}</span>
         </div>
       </div>
 
       {/* Progress Bar Visualization */}
       {totalLeads > 0 ? (
         <div className="space-y-2">
-          <div className="h-3 w-full rounded-full bg-slate-100 flex overflow-hidden">
+          <div className="h-3 w-full rounded-full bg-[var(--bg-elevated)] border border-[var(--border-subtle)] flex overflow-hidden">
             {STAGE_CONFIG.map((cfg) => {
               const count = counts[cfg.status] || 0;
               const pct = totalLeads > 0 ? (count / totalLeads) * 100 : 0;
@@ -72,7 +72,7 @@ export const LeadPipelineOverview: React.FC<LeadPipelineOverviewProps> = ({
           </div>
         </div>
       ) : (
-        <div className="text-xs text-slate-400 text-center py-2">No pipeline data recorded yet.</div>
+        <div className="text-xs text-[var(--text-muted)] text-center py-2">No pipeline data recorded yet.</div>
       )}
 
       {/* Stage Grid Cards */}
@@ -86,14 +86,14 @@ export const LeadPipelineOverview: React.FC<LeadPipelineOverviewProps> = ({
               key={cfg.status}
               type="button"
               onClick={() => onSelectStage && onSelectStage(cfg.status)}
-              className={`flex flex-col items-start p-3 rounded-lg border ${cfg.border} ${cfg.bg} hover:brightness-95 transition text-left cursor-pointer group`}
+              className={`flex flex-col items-start p-3 rounded-lg border ${cfg.border} ${cfg.bg} hover:brightness-110 transition text-left cursor-pointer group`}
             >
-              <span className="text-[11px] font-semibold text-slate-600 group-hover:text-slate-900">
+              <span className="text-[11px] font-semibold text-[var(--text-secondary)] group-hover:text-[var(--text-main)]">
                 {cfg.label}
               </span>
               <div className="mt-1 flex items-baseline justify-between w-full">
                 <span className={`text-lg font-bold ${cfg.textColor}`}>{count}</span>
-                <span className="text-[10px] font-medium text-slate-500">{pct}%</span>
+                <span className="text-[10px] font-medium text-[var(--text-muted)]">{pct}%</span>
               </div>
             </button>
           );
