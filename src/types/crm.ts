@@ -133,7 +133,8 @@ export type NavigationView =
   | 'data-quality'
   | 'data-management'
   | 'settings'
-  | 'search';
+  | 'search'
+  | 'super-admin';
 
 export interface LeadFilterState {
   searchQuery: string;

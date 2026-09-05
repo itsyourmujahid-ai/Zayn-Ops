@@ -9,20 +9,35 @@ import {
   updateProfile,
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import { UserProfile, UserRole } from '../types/database';
-import { getUserProfile, createOrUpdateUserProfile } from '../lib/dal';
+import { UserProfile, UserRole, CompanyRecord } from '../types/database';
+import {
+  getUserProfile,
+  createOrUpdateUserProfile,
+  getCompanyById,
+  ensureMultiTenantMigration,
+  DEFAULT_COMPANY_ID,
+  INITIAL_DEFAULT_COMPANY,
+} from '../lib/dal';
 import { PREDEFINED_ACCOUNTS, PredefinedAccount } from '../lib/predefinedAccounts';
 
 const ADMIN_BOOTSTRAP_EMAIL = 'itsyourmujahid@gmail.com';
 const LOCAL_STORAGE_SESSION_KEY = 'crm_active_session_v1';
+const VIEW_COMPANY_KEY = 'crm_super_admin_view_company_id';
 
 interface AuthContextType {
   currentUser: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
+  isSuperAdmin: boolean;
   isAdmin: boolean;
+  isCompanyAdmin: boolean;
   isSalesman: boolean;
   isActive: boolean;
+  currentCompany: CompanyRecord | null;
+  companyId: string;
+  isCompanyActive: boolean;
+  switchCompanyView: (companyId: string | null) => void;
+  activeViewingCompanyId: string | null;
   signIn: (email: string, pass: string) => Promise<void>;
   signUp: (fullName: string, email: string, pass: string, role?: UserRole) => Promise<void>;
   signOut: () => Promise<void>;
@@ -34,6 +49,10 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [currentCompany, setCurrentCompany] = useState<CompanyRecord | null>(INITIAL_DEFAULT_COMPANY);
+  const [activeViewingCompanyId, setActiveViewingCompanyId] = useState<string | null>(() => {
+    return typeof localStorage !== 'undefined' ? localStorage.getItem(VIEW_COMPANY_KEY) : null;
+  });
   const [loading, setLoading] = useState<boolean>(true);
 
   const fetchProfile = async (user: User, fallbackRole: UserRole = 'SALESMAN', overrideName?: string) => {
@@ -41,38 +60,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let profile = await getUserProfile(user.uid);
       const emailLower = (user.email || '').toLowerCase();
       const predefined = PREDEFINED_ACCOUNTS.find((a) => a.email.toLowerCase() === emailLower);
-      const isBootstrapAdmin =
+      const isSuperAdminUser =
         emailLower === ADMIN_BOOTSTRAP_EMAIL.toLowerCase() ||
-        predefined?.role === 'ADMIN';
+        predefined?.role === 'SUPER_ADMIN' ||
+        profile?.role === 'SUPER_ADMIN';
 
-      const defaultRole: UserRole = isBootstrapAdmin ? 'ADMIN' : (predefined?.role || fallbackRole);
-      const defaultName = overrideName || predefined?.name || user.displayName || user.email?.split('@')[0] || 'Sales User';
+      const defaultRole: UserRole = isSuperAdminUser
+        ? 'SUPER_ADMIN'
+        : predefined?.role || fallbackRole;
+      const defaultName =
+        overrideName || predefined?.name || user.displayName || user.email?.split('@')[0] || 'Sales User';
+      const targetCompanyId = isSuperAdminUser
+        ? profile?.company_id
+        : profile?.company_id || predefined?.company_id || DEFAULT_COMPANY_ID;
 
       if (!profile) {
         profile = await createOrUpdateUserProfile(user.uid, {
           full_name: defaultName,
           email: user.email || '',
           role: defaultRole,
+          company_id: targetCompanyId,
           is_active: true,
         });
-      } else if (isBootstrapAdmin && profile.role !== 'ADMIN') {
-        // Ensure admin emails always have ADMIN role
+      } else if (isSuperAdminUser && profile.role !== 'SUPER_ADMIN') {
+        // Ensure super admin email always holds SUPER_ADMIN role
         profile = await createOrUpdateUserProfile(user.uid, {
-          role: 'ADMIN',
+          role: 'SUPER_ADMIN',
         });
       }
+
       setUserProfile(profile);
+
+      // Load company record
+      const compId = profile.company_id || DEFAULT_COMPANY_ID;
+      const comp = await getCompanyById(compId);
+      if (comp) {
+        setCurrentCompany(comp);
+      }
+
       return profile;
     } catch (err) {
       console.error('Failed to load user profile from Firestore:', err);
       // Fallback local profile if offline or rules restricted
       const emailLower = (user.email || '').toLowerCase();
       const predefined = PREDEFINED_ACCOUNTS.find((a) => a.email.toLowerCase() === emailLower);
+      const isSuperAdminUser =
+        emailLower === ADMIN_BOOTSTRAP_EMAIL.toLowerCase() || predefined?.role === 'SUPER_ADMIN';
+      const fallbackRoleToUse: UserRole = isSuperAdminUser
+        ? 'SUPER_ADMIN'
+        : predefined?.role || fallbackRole;
+
       const fallback: UserProfile = {
         id: user.uid,
         full_name: overrideName || predefined?.name || user.displayName || 'Sales User',
         email: user.email || emailLower,
-        role: predefined?.role || fallbackRole,
+        role: fallbackRoleToUse,
+        company_id: isSuperAdminUser ? undefined : predefined?.company_id || DEFAULT_COMPANY_ID,
         is_active: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -83,6 +126,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    // Run safe multi-tenant migration backfill on app launch
+    ensureMultiTenantMigration().catch((err) => {
+      console.warn('Initial multi-tenant migration warning:', err);
+    });
+
     // Check local fallback session first
     const cachedSessionStr = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
     let cachedProfile: UserProfile | null = null;
@@ -90,7 +138,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         cachedProfile = JSON.parse(cachedSessionStr);
         if (cachedProfile) {
+          if (cachedProfile.email?.toLowerCase() === ADMIN_BOOTSTRAP_EMAIL) {
+            cachedProfile.role = 'SUPER_ADMIN';
+          }
           setUserProfile(cachedProfile);
+          if (cachedProfile.company_id) {
+            getCompanyById(cachedProfile.company_id).then((c) => {
+              if (c) setCurrentCompany(c);
+            });
+          }
         }
       } catch (e) {
         console.error('Error parsing cached session:', e);
@@ -121,6 +177,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => unsubscribe();
   }, []);
+
+  const switchCompanyView = (companyId: string | null) => {
+    if (companyId) {
+      localStorage.setItem(VIEW_COMPANY_KEY, companyId);
+      setActiveViewingCompanyId(companyId);
+      getCompanyById(companyId).then((c) => {
+        if (c) setCurrentCompany(c);
+      });
+    } else {
+      localStorage.removeItem(VIEW_COMPANY_KEY);
+      setActiveViewingCompanyId(null);
+      if (userProfile?.company_id) {
+        getCompanyById(userProfile.company_id).then((c) => {
+          if (c) setCurrentCompany(c);
+        });
+      }
+    }
+  };
 
   const signIn = async (email: string, pass: string) => {
     const cleanEmail = email.trim();
@@ -162,6 +236,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 full_name: predefined.name,
                 email: cleanEmail,
                 role: predefined.role,
+                company_id: predefined.company_id,
                 is_active: true,
               });
               setCurrentUser(userCredential.user);
@@ -170,14 +245,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               return;
             }
           } catch (createErr: any) {
-            // If creating with email fails due to operation-not-allowed, proceed to anonymous fallback
             console.warn('Firebase email auth creation fallback:', createErr);
           }
         }
       }
 
       // If email/password provider is disabled in Firebase console (auth/operation-not-allowed)
-      // We authenticate anonymously with Firebase Auth so Firestore security rules pass with a genuine auth token!
       if (
         err.code === 'auth/operation-not-allowed' ||
         err.code === 'auth/admin-restricted-operation' ||
@@ -191,7 +264,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
 
           const userName = predefined ? predefined.name : cleanEmail.split('@')[0];
-          const userRole: UserRole = predefined ? predefined.role : (emailLower === ADMIN_BOOTSTRAP_EMAIL ? 'ADMIN' : 'SALESMAN');
+          const isSuper = emailLower === ADMIN_BOOTSTRAP_EMAIL || predefined?.role === 'SUPER_ADMIN';
+          const userRole: UserRole = isSuper
+            ? 'SUPER_ADMIN'
+            : predefined
+            ? predefined.role
+            : 'SALESMAN';
+          const userCompany = isSuper
+            ? undefined
+            : predefined?.company_id || DEFAULT_COMPANY_ID;
           const userId = fbUser?.uid || `uid-${userName.toLowerCase()}`;
 
           // Create / update profile in Firestore
@@ -201,6 +282,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               full_name: userName,
               email: cleanEmail,
               role: userRole,
+              company_id: userCompany,
               is_active: true,
             });
           } catch (e) {
@@ -210,6 +292,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               full_name: userName,
               email: cleanEmail,
               role: userRole,
+              company_id: userCompany,
               is_active: true,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
@@ -225,12 +308,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setCurrentUser(activeUser);
           setUserProfile(profile);
           localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(profile));
+
+          if (userCompany) {
+            getCompanyById(userCompany).then((c) => {
+              if (c) setCurrentCompany(c);
+            });
+          }
           return;
         } catch (anonErr: any) {
           console.error('Anonymous auth fallback error:', anonErr);
-          // If completely offline or anonymous disabled, use local authenticated session
           const userName = predefined ? predefined.name : cleanEmail.split('@')[0];
-          const userRole: UserRole = predefined ? predefined.role : (emailLower === ADMIN_BOOTSTRAP_EMAIL ? 'ADMIN' : 'SALESMAN');
+          const isSuper = emailLower === ADMIN_BOOTSTRAP_EMAIL || predefined?.role === 'SUPER_ADMIN';
+          const userRole: UserRole = isSuper
+            ? 'SUPER_ADMIN'
+            : predefined
+            ? predefined.role
+            : 'SALESMAN';
+          const userCompany = isSuper ? undefined : predefined?.company_id || DEFAULT_COMPANY_ID;
           const userId = `uid-${userName.toLowerCase()}`;
 
           const localProfile: UserProfile = {
@@ -238,6 +332,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             full_name: userName,
             email: cleanEmail,
             role: userRole,
+            company_id: userCompany,
             is_active: true,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -264,8 +359,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signUp = async (fullName: string, email: string, pass: string, role: UserRole = 'SALESMAN') => {
     const cleanEmail = email.trim();
     const cleanPass = pass.trim();
-    const isBootstrapAdmin = cleanEmail.toLowerCase() === ADMIN_BOOTSTRAP_EMAIL.toLowerCase();
-    const finalRole: UserRole = isBootstrapAdmin ? 'ADMIN' : role;
+    const isBootstrapSuperAdmin = cleanEmail.toLowerCase() === ADMIN_BOOTSTRAP_EMAIL.toLowerCase();
+    const finalRole: UserRole = isBootstrapSuperAdmin ? 'SUPER_ADMIN' : role;
 
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
@@ -281,6 +376,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           full_name: fullName.trim() || 'Sales Representative',
           email: userCredential.user.email || cleanEmail,
           role: finalRole,
+          company_id: isBootstrapSuperAdmin ? undefined : DEFAULT_COMPANY_ID,
           is_active: true,
         });
         setCurrentUser(userCredential.user);
@@ -292,7 +388,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         err.code === 'auth/operation-not-allowed' ||
         err.code === 'auth/admin-restricted-operation'
       ) {
-        // Fallback to anonymous sign in
         let fbUser = auth.currentUser;
         if (!fbUser) {
           const anonCred = await signInAnonymously(auth);
@@ -303,6 +398,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           full_name: fullName.trim() || 'Sales Representative',
           email: cleanEmail,
           role: finalRole,
+          company_id: isBootstrapSuperAdmin ? undefined : DEFAULT_COMPANY_ID,
           is_active: true,
         });
         const activeUser: any = fbUser || {
@@ -326,6 +422,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('Signout warning:', e);
     }
     localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY);
+    localStorage.removeItem(VIEW_COMPANY_KEY);
     setCurrentUser(null);
     setUserProfile(null);
   };
@@ -336,9 +433,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const isAdmin = userProfile?.role?.toUpperCase() === 'ADMIN';
+  const isSuperAdmin =
+    userProfile?.role === 'SUPER_ADMIN' ||
+    currentUser?.email?.toLowerCase() === ADMIN_BOOTSTRAP_EMAIL;
+  const isCompanyAdmin = userProfile?.role?.toUpperCase() === 'ADMIN' && !isSuperAdmin;
+  const isAdmin = isSuperAdmin || userProfile?.role?.toUpperCase() === 'ADMIN';
   const isSalesman = !isAdmin;
   const isActive = userProfile?.is_active !== false;
+
+  const companyId =
+    activeViewingCompanyId || userProfile?.company_id || DEFAULT_COMPANY_ID;
+  const isCompanyActive = isSuperAdmin || (currentCompany ? currentCompany.status === 'ACTIVE' : true);
 
   return (
     <AuthContext.Provider
@@ -346,9 +451,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentUser,
         userProfile,
         loading,
+        isSuperAdmin,
         isAdmin,
+        isCompanyAdmin,
         isSalesman,
         isActive,
+        currentCompany,
+        companyId,
+        isCompanyActive,
+        switchCompanyView,
+        activeViewingCompanyId,
         signIn,
         signUp,
         signOut,
@@ -367,6 +479,7 @@ export const useAuth = () => {
   }
   return context;
 };
+
 
 
 

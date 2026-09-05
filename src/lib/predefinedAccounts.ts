@@ -5,36 +5,48 @@ export interface PredefinedAccount {
   email: string;
   password: string;
   role: UserRole;
+  company_id?: string;
   description: string;
 }
 
 export const PREDEFINED_ACCOUNTS: PredefinedAccount[] = [
   {
-    name: 'Admin',
+    name: 'Mujahid Islam (Super Admin)',
+    email: 'itsyourmujahid@gmail.com',
+    password: 'bahwanmge',
+    role: 'SUPER_ADMIN',
+    description: 'Platform Super Administrator • Multi-Company SaaS Governance',
+  },
+  {
+    name: 'Admin (Bahwan M&E)',
     email: 'admin@bahwanmge.com',
     password: 'bahwanmge',
     role: 'ADMIN',
-    description: 'System Administrator • Full Lead & Team Visibility',
+    company_id: 'company-bahwan-mge',
+    description: 'Company Administrator • Bahwan M&E',
   },
   {
-    name: 'Rashid',
+    name: 'Rashid (Sales Rep)',
     email: 'rashid@bahwanmge.com',
     password: 'bahwanmge',
     role: 'SALESMAN',
-    description: 'Sales Representative • Assigned Pipeline',
+    company_id: 'company-bahwan-mge',
+    description: 'Sales Representative • Bahwan M&E',
   },
   {
-    name: 'Saud',
+    name: 'Saud (Sales Rep)',
     email: 'saud@bahwanmge.com',
     password: 'bahwanmge',
     role: 'SALESMAN',
-    description: 'Sales Representative • Assigned Pipeline',
+    company_id: 'company-bahwan-mge',
+    description: 'Sales Representative • Bahwan M&E',
   },
   {
-    name: 'Joseph',
+    name: 'Joseph (Sales Rep)',
     email: 'joseph@bahwanmge.com',
     password: 'bahwanmge',
     role: 'SALESMAN',
-    description: 'Sales Representative • Assigned Pipeline',
+    company_id: 'company-bahwan-mge',
+    description: 'Sales Representative • Bahwan M&E',
   },
 ];

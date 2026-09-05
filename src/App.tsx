@@ -26,17 +26,18 @@ import { SettingsPage } from './pages/SettingsPage';
 import { SearchPage } from './pages/SearchPage';
 import { SegmentsPage } from './pages/SegmentsPage';
 import { CalendarPage } from './pages/CalendarPage';
+import { SuperAdminPage } from './pages/SuperAdminPage';
 import { GlobalSearchModal } from './components/search/GlobalSearchModal';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthPage } from './pages/AuthPage';
-import { Compass } from 'lucide-react';
+import { Compass, Building2 } from 'lucide-react';
 import { LeadRecord } from './types/database';
 import { recordSecurityAuditLog } from './lib/dal';
 
 import { FollowupTab } from './pages/FollowupsPage';
 
 const AuthenticatedCRM: React.FC = () => {
-  const { currentUser, userProfile, loading, isActive, signOut } = useAuth();
+  const { currentUser, userProfile, loading, isActive, isSuperAdmin, currentCompany, signOut } = useAuth();
   const [currentView, setCurrentView] = useState<NavigationView>('dashboard');
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
@@ -140,6 +141,22 @@ const AuthenticatedCRM: React.FC = () => {
           });
           window.history.replaceState({}, '', '/');
         }
+      } else if (path === '/super-admin') {
+        if (isSuperAdmin) {
+          setCurrentView('super-admin');
+        } else {
+          addToast(
+            'error',
+            'Access Denied',
+            'Super Administrator credentials required to access Super Admin Panel.'
+          );
+          recordSecurityAuditLog({
+            action: 'security_unauthorized_action',
+            description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted direct URL navigation to /super-admin.`,
+            metadata: { path, user_role: userProfile?.role || 'SALESMAN', blocked: true },
+          });
+          window.history.replaceState({}, '', '/');
+        }
       }
 
       const handlePopState = () => {
@@ -175,14 +192,20 @@ const AuthenticatedCRM: React.FC = () => {
         } else if (currentPath === '/data-management') {
           setSelectedClientId(null);
           setSelectedLeadId(null);
-          if (userProfile?.role === 'ADMIN') {
+          if (userProfile?.role === 'ADMIN' || isSuperAdmin) {
             setCurrentView('data-management');
           } else {
             setCurrentView('dashboard');
           }
         } else if (currentPath === '/audit' || currentPath === '/audit-logs') {
-          if (userProfile?.role === 'ADMIN') {
+          if (userProfile?.role === 'ADMIN' || isSuperAdmin) {
             setCurrentView('audit');
+          } else {
+            setCurrentView('dashboard');
+          }
+        } else if (currentPath === '/super-admin') {
+          if (isSuperAdmin) {
+            setCurrentView('super-admin');
           } else {
             setCurrentView('dashboard');
           }
@@ -236,8 +259,23 @@ const AuthenticatedCRM: React.FC = () => {
       salesman?: string;
     }
   ) => {
+    // Super Admin security check
+    if (view === 'super-admin' && !isSuperAdmin) {
+      addToast(
+        'error',
+        'Access Denied',
+        'Super Administrator credentials required to access Super Admin Panel.'
+      );
+      recordSecurityAuditLog({
+        action: 'security_unauthorized_action',
+        description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted unauthorized navigation to Super Admin Panel.`,
+        metadata: { attempted_view: 'super-admin', user_role: userProfile?.role || 'SALESMAN', status: 'BLOCKED' },
+      });
+      return;
+    }
+
     // Phase M: RBAC Security check for Audit Logs navigation
-    if (view === 'audit' && userProfile?.role !== 'ADMIN') {
+    if (view === 'audit' && userProfile?.role !== 'ADMIN' && !isSuperAdmin) {
       addToast(
         'error',
         'Access Denied',
@@ -251,7 +289,7 @@ const AuthenticatedCRM: React.FC = () => {
       return;
     }
 
-    if (view === 'data-management' && userProfile?.role !== 'ADMIN') {
+    if (view === 'data-management' && userProfile?.role !== 'ADMIN' && !isSuperAdmin) {
       addToast(
         'error',
         'Access Denied',
@@ -268,7 +306,9 @@ const AuthenticatedCRM: React.FC = () => {
     setSelectedLeadId(null);
     setSelectedClientId(null);
     if (typeof window !== 'undefined' && window.history) {
-      if (view === 'clients') {
+      if (view === 'super-admin') {
+        window.history.pushState({}, '', '/super-admin');
+      } else if (view === 'clients') {
         window.history.pushState({}, '', '/clients');
       } else if (view === 'calendar') {
         window.history.pushState({}, '', '/calendar');
@@ -349,6 +389,30 @@ const AuthenticatedCRM: React.FC = () => {
           <h2 className="mt-4 text-xl font-bold text-slate-900">Account Disabled</h2>
           <p className="mt-2 text-xs text-slate-500 leading-relaxed">
             Your salesman account ({currentUser.email}) has been deactivated by the system Administrator. Please contact your CRM administrator to restore access.
+          </p>
+          <button
+            type="button"
+            onClick={signOut}
+            className="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white hover:bg-slate-800 transition cursor-pointer"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // If company organization has been deactivated by Super Admin
+  if (userProfile && !isSuperAdmin && currentCompany?.status === 'INACTIVE') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-xs">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-amber-600">
+            <Building2 className="h-6 w-6" />
+          </div>
+          <h2 className="mt-4 text-xl font-bold text-slate-900">Organization Inactive</h2>
+          <p className="mt-2 text-xs text-slate-500 leading-relaxed">
+            Your company organization ({currentCompany?.name || 'Company'}) has been deactivated by the ZaynOs Super Administrator. Please contact system support or your ZaynOs representative to restore access.
           </p>
           <button
             type="button"
@@ -495,6 +559,8 @@ const AuthenticatedCRM: React.FC = () => {
         );
       case 'settings':
         return <SettingsPage />;
+      case 'super-admin':
+        return <SuperAdminPage />;
       case 'search':
         return (
           <SearchPage

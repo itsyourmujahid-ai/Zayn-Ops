@@ -68,17 +68,77 @@ export type FollowUpActionType =
   | 'Payment Follow-up'
   | 'Other';
 
-export type UserRole = 'ADMIN' | 'SALESMAN' | 'admin' | 'sales_rep';
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'SALESMAN' | 'admin' | 'sales_rep';
+
+export type CompanyStatus = 'ACTIVE' | 'INACTIVE';
+
+/**
+ * Company record in Firestore: `companies/{companyId}`
+ * Phase X — Multi-Company SaaS Architecture
+ */
+export interface CompanyRecord {
+  id: string;
+  name: string;
+  code?: string;
+  email?: string;
+  contact_email?: string;
+  phone?: string;
+  contact_phone?: string;
+  industry?: string;
+  address?: string;
+  website?: string;
+  notes?: string;
+  logo_url?: string;
+  timezone?: string;
+  currency?: string;
+  status: CompanyStatus;
+  created_at: string;
+  updated_at: string;
+  created_by?: string; // Super Admin UID
+  // Denormalized/Aggregated usage metrics
+  salesmen_count?: number;
+  leads_count?: number;
+  clients_count?: number;
+  admin_id?: string;
+  admin_name?: string;
+  admin_email?: string;
+}
+
+export interface CreateCompanyInput {
+  name: string;
+  code?: string;
+  email?: string;
+  contact_email?: string;
+  phone?: string;
+  contact_phone?: string;
+  industry?: string;
+  address?: string;
+  website?: string;
+  notes?: string;
+  logo_url?: string;
+  timezone?: string;
+  currency?: string;
+  status?: CompanyStatus;
+  // Initial Company Admin details
+  admin_full_name?: string;
+  admin_email?: string;
+  admin_phone?: string;
+  admin_password?: string;
+}
+
+export type UpdateCompanyInput = Partial<CreateCompanyInput>;
 
 /**
  * User Profile in Firestore: `users/{userId}`
  */
 export interface UserProfile {
   id: string; // Auth UID
+  company_id?: string; // Company ID (Mandatory for ADMIN and SALESMAN)
   full_name: string;
   email: string;
+  phone?: string;
   avatar_url?: string;
-  role: UserRole; // 'ADMIN' | 'SALESMAN'
+  role: UserRole; // 'SUPER_ADMIN' | 'ADMIN' | 'SALESMAN'
   is_active: boolean; // default: true
   created_at: string; // ISO 8601 string
   updated_at: string; // ISO 8601 string
@@ -89,6 +149,7 @@ export interface UserProfile {
  */
 export interface LeadRecord {
   id: string;
+  company_id?: string; // Tenant company boundary
   company_name: string; // Required
   contact_person?: string;
   phone?: string;
@@ -123,8 +184,10 @@ export interface LeadRecord {
   source_client_id?: string; // Safe reference if this lead is a repeat opportunity from an existing client
   // Phase R: Advanced Tagging
   tags?: string[];
-  // Phase S: Duplicate Detection & Safe Merge
-  record_status?: 'active' | 'merged';
+  // Phase S: Duplicate Detection & Safe Merge + Phase X Soft Deletion
+  record_status?: 'active' | 'merged' | 'deleted';
+  deleted_at?: string;
+  deleted_by?: string;
   merged_into_id?: string;
   merged_at?: string;
   merged_by?: string;
@@ -144,6 +207,7 @@ export type ClientStatus = 'Active' | 'Inactive';
 
 export interface ClientRecord {
   id: string;
+  company_id?: string; // Tenant company boundary
   company_name: string;
   contact_person?: string;
   phone?: string;
@@ -197,6 +261,7 @@ export interface LeadTransferRecord {
  */
 export interface LeadActivityRecord {
   id: string;
+  company_id?: string; // Tenant company boundary
   lead_id: string; // Belongs to Lead
   activity_type: ActivityType;
   outcome?: string; // e.g. 'Connected', 'Message Sent', 'Quotation Accepted'
@@ -221,6 +286,7 @@ export interface LeadActivityRecord {
  */
 export interface FollowUpRecord {
   id: string;
+  company_id?: string; // Tenant company boundary
   lead_id: string; // Belongs to Lead
   company_name?: string; // Denormalized for display in Follow-up Center
   contact_person?: string;
@@ -271,6 +337,7 @@ export type AttachmentCategory =
  */
 export interface AttachmentRecord {
   id: string;
+  company_id?: string; // Tenant company boundary
   lead_id: string; // Belongs to Lead
   file_name: string;
   storage_path: string;
@@ -308,6 +375,7 @@ export type NotificationType =
 
 export interface NotificationRecord {
   id: string;
+  company_id?: string; // Tenant company boundary
   recipient_id: string; // Target User UID
   recipient_name?: string;
   type: NotificationType;
@@ -341,6 +409,16 @@ export interface CreateNotificationInput {
  * Phase M — Dedicated Admin-only Security & System Accountability Log
  */
 export type AuditActionType =
+  | 'company_created'
+  | 'company_updated'
+  | 'company_activated'
+  | 'company_deactivated'
+  | 'company_admin_created'
+  | 'company_admin_activated'
+  | 'company_admin_deactivated'
+  | 'salesman_created'
+  | 'salesman_activated'
+  | 'salesman_deactivated'
   | 'user_created'
   | 'user_activated'
   | 'user_deactivated'
@@ -379,16 +457,17 @@ export type AuditActionType =
   | 'security_permission_denied'
   | 'system_action';
 
-export type AuditEntityType = 'User' | 'Lead' | 'Client' | 'Tag' | 'Segment' | 'Duplicate' | 'DataQuality' | 'Security' | 'Settings' | 'System';
+export type AuditEntityType = 'Company' | 'User' | 'Lead' | 'Client' | 'Tag' | 'Segment' | 'Duplicate' | 'DataQuality' | 'Security' | 'Settings' | 'System';
 
 export interface AuditLogRecord {
   id: string;
+  company_id?: string; // Tenant company boundary (empty for system-wide/Super Admin logs)
   action: AuditActionType | string;
   entity_type: AuditEntityType | string;
   entity_id: string;
   performed_by: string; // User UID
   performed_by_name: string;
-  performed_by_role: string; // 'ADMIN' | 'SALESMAN'
+  performed_by_role: string; // 'SUPER_ADMIN' | 'ADMIN' | 'SALESMAN'
   target_user_id?: string;
   target_user_name?: string;
   lead_id?: string;
@@ -399,6 +478,7 @@ export interface AuditLogRecord {
 }
 
 export interface CreateAuditLogInput {
+  company_id?: string;
   action: AuditActionType | string;
   entity_type: AuditEntityType | string;
   entity_id: string;
@@ -427,6 +507,7 @@ export interface AuditFilterState {
  * Input DTOs for Database Access Layer
  */
 export interface CreateLeadInput {
+  company_id?: string;
   company_name: string;
   contact_person?: string;
   phone?: string;
@@ -587,6 +668,7 @@ export type TagType = 'Lead' | 'Client' | 'Both';
 
 export interface TagRecord {
   id: string;
+  company_id?: string; // Tenant company boundary
   name: string; // Trimmed, unique case-insensitively
   description?: string;
   type: TagType;
@@ -652,6 +734,7 @@ export interface SegmentFilterDefinition {
 
 export interface SavedSegmentRecord {
   id: string;
+  company_id?: string; // Tenant company boundary
   name: string;
   description: string;
   entity_type: SegmentEntityType;
@@ -683,6 +766,7 @@ export interface UpdateSavedSegmentInput {
  */
 export interface NotDuplicateRecord {
   id: string; // [idA, idB].sort().join('_')
+  company_id?: string; // Tenant company boundary
   record_a_id: string;
   record_b_id: string;
   entity_type: 'Lead' | 'Client';

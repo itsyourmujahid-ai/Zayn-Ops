@@ -28,7 +28,7 @@ import {
   getDownloadURL,
   deleteObject,
 } from 'firebase/storage';
-import { db, auth, storage } from './firebase';
+import { db, auth, storage, createAuthUserWithoutSignOut } from './firebase';
 import {
   LeadRecord,
   CreateLeadInput,
@@ -75,6 +75,10 @@ import {
   NotDuplicateRecord,
   MergeLeadsParams,
   MergeClientsParams,
+  CompanyRecord,
+  CompanyStatus,
+  CreateCompanyInput,
+  UpdateCompanyInput,
 } from '../types/database';
 import { PREDEFINED_ACCOUNTS } from './predefinedAccounts';
 import { normalizePhone, normalizeEmail, normalizeCompanyName, getPairKey } from './dataQuality';
@@ -91,6 +95,57 @@ const LOCAL_STORAGE_CLIENTS_KEY = 'crm_local_clients_v2';
 const LOCAL_STORAGE_TAGS_KEY = 'crm_local_tags_v2';
 const LOCAL_STORAGE_SAVED_SEGMENTS_KEY = 'crm_local_saved_segments_v2';
 const LOCAL_STORAGE_NOT_DUPLICATES_KEY = 'crm_local_not_duplicates_v2';
+export const LOCAL_STORAGE_COMPANIES_KEY = 'crm_local_companies_v1';
+
+export const DEFAULT_COMPANY_ID = 'company-bahwan-mge';
+
+export const INITIAL_DEFAULT_COMPANY: CompanyRecord = {
+  id: DEFAULT_COMPANY_ID,
+  name: 'Bahwan M&E LLC',
+  code: 'BMGE',
+  industry: 'Engineering & Construction Fitout',
+  contact_email: 'info@bahwanmge.com',
+  contact_phone: '+968 24 123456',
+  address: 'CBD Area, Muscat, Sultanate of Oman',
+  status: 'ACTIVE',
+  created_at: '2026-01-01T00:00:00.000Z',
+  updated_at: '2026-01-01T00:00:00.000Z',
+};
+
+export function getLocalCompanies(): CompanyRecord[] {
+  if (typeof localStorage === 'undefined') return [INITIAL_DEFAULT_COMPANY];
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_COMPANIES_KEY);
+    if (!raw) {
+      localStorage.setItem(LOCAL_STORAGE_COMPANIES_KEY, JSON.stringify([INITIAL_DEFAULT_COMPANY]));
+      return [INITIAL_DEFAULT_COMPANY];
+    }
+    const parsed: CompanyRecord[] = JSON.parse(raw);
+    if (!parsed || parsed.length === 0) {
+      localStorage.setItem(LOCAL_STORAGE_COMPANIES_KEY, JSON.stringify([INITIAL_DEFAULT_COMPANY]));
+      return [INITIAL_DEFAULT_COMPANY];
+    }
+    return parsed;
+  } catch (e) {
+    return [INITIAL_DEFAULT_COMPANY];
+  }
+}
+
+export function setLocalCompanies(companies: CompanyRecord[]) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(LOCAL_STORAGE_COMPANIES_KEY, JSON.stringify(companies));
+  } catch (e) {
+    console.warn('LocalStorage save failed for companies:', e);
+  }
+  notifyCompaniesChanged();
+}
+
+export function notifyCompaniesChanged() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('crm_companies_changed'));
+  }
+}
 
 // ----------------------------------------------------------------------
 // Phase M: Audit Log Seed Data & Local Synchronizers
@@ -940,7 +995,10 @@ export function getEffectiveUserRole(): UserRole {
       if (cachedSessionStr) {
         const cached = JSON.parse(cachedSessionStr);
         if (cached && cached.role) {
-          return (cached.role.toUpperCase() === 'ADMIN' ? 'ADMIN' : 'SALESMAN') as UserRole;
+          const upper = String(cached.role).toUpperCase();
+          if (upper === 'SUPER_ADMIN' || cached.email?.toLowerCase() === 'itsyourmujahid@gmail.com') return 'SUPER_ADMIN';
+          if (upper === 'ADMIN') return 'ADMIN';
+          return 'SALESMAN';
         }
       }
     } catch (e) {
@@ -948,9 +1006,31 @@ export function getEffectiveUserRole(): UserRole {
     }
   }
   if (auth.currentUser?.email?.toLowerCase() === 'itsyourmujahid@gmail.com') {
-    return 'ADMIN';
+    return 'SUPER_ADMIN';
   }
   return 'SALESMAN';
+}
+
+export function isEffectiveSuperAdmin(): boolean {
+  if (auth.currentUser?.email?.toLowerCase() === 'itsyourmujahid@gmail.com') return true;
+  return getEffectiveUserRole() === 'SUPER_ADMIN';
+}
+
+export function getEffectiveCompanyId(): string {
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const cachedSessionStr = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
+      if (cachedSessionStr) {
+        const cached = JSON.parse(cachedSessionStr);
+        if (cached && cached.company_id) {
+          return cached.company_id;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+  return DEFAULT_COMPANY_ID;
 }
 
 // ==========================================
@@ -963,10 +1043,13 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
     const snap = await getDoc(userRef);
     if (snap.exists()) {
       const data = snap.data();
+      const isSuper = data.role?.toUpperCase() === 'SUPER_ADMIN' || data.email?.toLowerCase() === 'itsyourmujahid@gmail.com' || userId === 'uid-mujahid';
+      const resolvedRole: UserRole = isSuper ? 'SUPER_ADMIN' : data.role?.toUpperCase() === 'ADMIN' ? 'ADMIN' : 'SALESMAN';
       return {
         id: snap.id,
         ...data,
-        role: (data.role?.toUpperCase() === 'ADMIN' ? 'ADMIN' : 'SALESMAN') as UserRole,
+        role: resolvedRole,
+        company_id: data.company_id || (isSuper ? undefined : DEFAULT_COMPANY_ID),
         is_active: data.is_active !== false,
       } as UserProfile;
     }
@@ -981,7 +1064,15 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
       if (raw) {
         const users: UserProfile[] = JSON.parse(raw);
         const found = users.find((u) => u.id === userId);
-        if (found) return found;
+        if (found) {
+          const isSuper = found.role?.toUpperCase() === 'SUPER_ADMIN' || found.email?.toLowerCase() === 'itsyourmujahid@gmail.com' || userId === 'uid-mujahid';
+          const resolvedRole: UserRole = isSuper ? 'SUPER_ADMIN' : found.role?.toUpperCase() === 'ADMIN' ? 'ADMIN' : 'SALESMAN';
+          return {
+            ...found,
+            role: resolvedRole,
+            company_id: found.company_id || (isSuper ? undefined : DEFAULT_COMPANY_ID),
+          };
+        }
       }
     } catch (e) {
       // ignore
@@ -1048,6 +1139,7 @@ export async function getAllUsers(): Promise<UserProfile[]> {
       full_name: account.name,
       email: account.email,
       role: account.role,
+      company_id: account.company_id,
       is_active: true,
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-01T00:00:00.000Z',
@@ -1082,10 +1174,13 @@ export async function getAllUsers(): Promise<UserProfile[]> {
     if (!snap.empty) {
       snap.forEach((docSnap) => {
         const data = docSnap.data();
+        const isSuper = data.role?.toUpperCase() === 'SUPER_ADMIN' || data.email?.toLowerCase() === 'itsyourmujahid@gmail.com' || docSnap.id === 'uid-mujahid';
+        const role = isSuper ? 'SUPER_ADMIN' : data.role?.toUpperCase() === 'ADMIN' ? 'ADMIN' : 'SALESMAN';
         const profile: UserProfile = {
           id: docSnap.id,
           ...data,
-          role: (data.role?.toUpperCase() === 'ADMIN' ? 'ADMIN' : 'SALESMAN') as UserRole,
+          role: role as UserRole,
+          company_id: data.company_id || (isSuper ? undefined : DEFAULT_COMPANY_ID),
           is_active: data.is_active !== false,
         } as UserProfile;
         usersMap.set(docSnap.id, profile);
@@ -1287,6 +1382,7 @@ export async function createLead(
     lost_reason: input.lost_reason || '',
     created_by: userId,
     assigned_to: assignedTo,
+    company_id: input.company_id || getEffectiveCompanyId() || DEFAULT_COMPANY_ID,
     source_client_id: input.source_client_id || undefined,
     record_status: 'active',
     normalized_phone: normalizePhone(input.phone),
@@ -1473,11 +1569,21 @@ export async function getLeads(options?: {
   userRole?: UserRole;
   limitCount?: number;
   includeMerged?: boolean;
+  companyId?: string;
 }): Promise<LeadRecord[]> {
   const userId = getEffectiveUserId();
-  const isUserAdmin = options?.userRole?.toUpperCase() === 'ADMIN';
+  const currentRole = options?.userRole || getEffectiveUserRole();
+  const isSuper = currentRole === 'SUPER_ADMIN';
+  const isUserAdmin = isSuper || currentRole.toUpperCase() === 'ADMIN';
+  const effectiveCompany = options?.companyId || getEffectiveCompanyId();
 
   let local = getLocalLeads();
+
+  // Multi-tenant company isolation
+  if (!isSuper || options?.companyId) {
+    local = local.filter((l) => (l.company_id || DEFAULT_COMPANY_ID) === effectiveCompany);
+  }
+
   if (!options?.includeMerged) {
     local = local.filter((l) => l.record_status !== 'merged');
   }
@@ -1506,13 +1612,23 @@ export function subscribeToLeads(
   userRole?: UserRole,
   onError?: (error: Error) => void,
   targetUserId?: string,
-  includeMerged: boolean = false
+  includeMerged: boolean = false,
+  companyIdOverride?: string
 ): Unsubscribe {
   const userId = targetUserId || getEffectiveUserId();
-  const isUserAdmin = userRole?.toUpperCase() === 'ADMIN';
+  const currentRole = userRole || getEffectiveUserRole();
+  const isSuper = currentRole === 'SUPER_ADMIN';
+  const isUserAdmin = isSuper || currentRole.toUpperCase() === 'ADMIN';
+  const effectiveCompany = companyIdOverride || getEffectiveCompanyId();
 
   const filterAndEmit = (rawList: LeadRecord[]) => {
     let filtered = rawList;
+
+    // Multi-tenant company isolation filter
+    if (!isSuper || companyIdOverride) {
+      filtered = filtered.filter((l) => (l.company_id || DEFAULT_COMPANY_ID) === effectiveCompany);
+    }
+
     if (!includeMerged) {
       filtered = filtered.filter((l) => l.record_status !== 'merged');
     }
@@ -1542,6 +1658,8 @@ export function subscribeToLeads(
     let q;
     if (!isUserAdmin) {
       q = query(leadsRef, where('assigned_to', '==', userId));
+    } else if (!isSuper && effectiveCompany) {
+      q = query(leadsRef, where('company_id', '==', effectiveCompany));
     } else {
       q = query(leadsRef);
     }
@@ -1850,11 +1968,20 @@ export async function getTransferHistory(leadId: string): Promise<LeadTransferRe
   }
 }
 
-export async function deleteLead(leadId: string): Promise<void> {
+export async function deleteLead(
+  leadId: string,
+  reason?: string,
+  actor?: { id: string; name: string; role: UserRole }
+): Promise<void> {
   const localList = getLocalLeads();
   const leadToDelete = localList.find((l) => l.id === leadId);
-  const adminId = getEffectiveUserId();
-  const adminName = getEffectiveUserName();
+  const adminId = actor?.id || getEffectiveUserId();
+  const adminName = actor?.name || getEffectiveUserName();
+  const adminRole = actor?.role || getEffectiveUserRole();
+
+  if (adminRole !== 'ADMIN' && adminRole !== 'SUPER_ADMIN') {
+    throw new Error('Unauthorized: Only Administrators can delete leads.');
+  }
 
   // Update local cache
   const updatedList = localList.filter((l) => l.id !== leadId);
@@ -1878,13 +2005,16 @@ export async function deleteLead(leadId: string): Promise<void> {
       lead_company_name: leadToDelete?.company_name || 'Lead',
       performed_by: adminId,
       performed_by_name: adminName,
-      performed_by_role: 'ADMIN',
-      description: `Administrator ${adminName} permanently deleted Lead "${leadToDelete?.company_name || leadId}".`,
+      performed_by_role: (adminRole === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN') as any,
+      description: `${adminRole === 'SUPER_ADMIN' ? 'Super Administrator' : 'Company Administrator'} ${adminName} permanently deleted Lead "${leadToDelete?.company_name || leadId}".${reason ? ` Reason: ${reason}` : ''}`,
       metadata: {
+        company_id: leadToDelete?.company_id || getEffectiveCompanyId(),
         company_name: leadToDelete?.company_name,
         previous_status: leadToDelete?.status,
         previous_priority: leadToDelete?.priority,
         assigned_to: leadToDelete?.assigned_to,
+        reason: reason || 'Administrative Deletion',
+        deleted_at: new Date().toISOString(),
       },
     });
   } catch (auditErr) {
@@ -5902,6 +6032,569 @@ export function subscribeToImportJobs(callback: (jobs: any[]) => void): () => vo
     return () => {};
   }
 }
+
+// ----------------------------------------------------------------------
+// Phase X: ZaynOs Multi-Company SaaS Architecture & Management
+// ----------------------------------------------------------------------
+
+export async function getCompanies(): Promise<CompanyRecord[]> {
+  const companiesMap = new Map<string, CompanyRecord>();
+
+  // 1. Initial default company
+  companiesMap.set(INITIAL_DEFAULT_COMPANY.id, INITIAL_DEFAULT_COMPANY);
+
+  // 2. Local companies
+  const locals = getLocalCompanies();
+  locals.forEach((c) => companiesMap.set(c.id, c));
+
+  // 3. Firestore companies
+  try {
+    const colRef = collection(db, 'companies');
+    const snap = await getDocs(colRef);
+    if (!snap.empty) {
+      snap.forEach((d) => {
+        companiesMap.set(d.id, { id: d.id, ...d.data() } as CompanyRecord);
+      });
+    }
+  } catch (err) {
+    console.warn('Firestore getCompanies fallback to local cache:', err);
+  }
+
+  const result = Array.from(companiesMap.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+  setLocalCompanies(result);
+  return result;
+}
+
+export async function getCompanyById(companyId: string): Promise<CompanyRecord | null> {
+  if (!companyId) return null;
+  const locals = getLocalCompanies();
+  const local = locals.find((c) => c.id === companyId);
+
+  try {
+    const docRef = doc(db, 'companies', companyId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const company = { id: snap.id, ...snap.data() } as CompanyRecord;
+      const updated = locals.some((c) => c.id === companyId)
+        ? locals.map((c) => (c.id === companyId ? company : c))
+        : [...locals, company];
+      setLocalCompanies(updated);
+      return company;
+    }
+  } catch (e) {
+    console.warn('Firestore getCompanyById notice:', e);
+  }
+
+  return local || null;
+}
+
+export async function createCompany(
+  input: CreateCompanyInput,
+  initialAdmin?: { full_name: string; email: string; password?: string },
+  actor?: UserProfile
+): Promise<CompanyRecord> {
+  const actorId = actor?.id || getEffectiveUserId();
+  const actorName = actor?.full_name || getEffectiveUserName();
+  const actorRole = actor?.role || getEffectiveUserRole();
+
+  if (actorRole !== 'SUPER_ADMIN') {
+    throw new Error('Unauthorized: Only a Super Administrator can create new companies.');
+  }
+
+  if (!input.name || !input.name.trim()) {
+    throw new Error('Company name is required.');
+  }
+
+  const now = new Date().toISOString();
+  const companyId = 'comp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+
+  const newCompany: CompanyRecord = {
+    id: companyId,
+    name: input.name.trim(),
+    code: input.code?.trim() || input.name.trim().substring(0, 4).toUpperCase(),
+    industry: input.industry?.trim() || '',
+    contact_email: input.contact_email?.trim() || '',
+    contact_phone: input.contact_phone?.trim() || '',
+    address: input.address?.trim() || '',
+    notes: input.notes?.trim() || '',
+    status: 'ACTIVE',
+    created_at: now,
+    updated_at: now,
+  };
+
+  // Save to local cache
+  const locals = getLocalCompanies();
+  locals.unshift(newCompany);
+  setLocalCompanies(locals);
+
+  // Save to Firestore
+  try {
+    const docRef = doc(db, 'companies', companyId);
+    const { id, ...data } = newCompany;
+    await setDoc(docRef, data);
+  } catch (err) {
+    console.warn('Firestore createCompany fallback notice:', err);
+  }
+
+  // Create initial Company Admin if provided
+  if (initialAdmin && initialAdmin.email) {
+    try {
+      await createCompanyUser(
+        companyId,
+        {
+          full_name: initialAdmin.full_name || `${input.name} Admin`,
+          email: initialAdmin.email,
+          role: 'ADMIN',
+          password: initialAdmin.password || 'Welcome123!',
+        },
+        actor
+      );
+    } catch (adminErr) {
+      console.warn('Initial company admin creation notice:', adminErr);
+    }
+  }
+
+  // Record Audit Log
+  try {
+    await createAuditLog({
+      action: 'company_created',
+      entity_type: 'Company',
+      entity_id: companyId,
+      performed_by: actorId,
+      performed_by_name: actorName,
+      performed_by_role: 'SUPER_ADMIN',
+      description: `Super Administrator ${actorName} created Company "${newCompany.name}" (${newCompany.id}).`,
+      metadata: {
+        company_id: companyId,
+        company_name: newCompany.name,
+        contact_email: newCompany.contact_email,
+        contact_phone: newCompany.contact_phone,
+        industry: newCompany.industry,
+      },
+    });
+  } catch (auditErr) {
+    console.warn('createCompany audit log notice:', auditErr);
+  }
+
+  return newCompany;
+}
+
+export async function updateCompany(
+  companyId: string,
+  input: UpdateCompanyInput,
+  actor?: UserProfile
+): Promise<CompanyRecord> {
+  const actorId = actor?.id || getEffectiveUserId();
+  const actorName = actor?.full_name || getEffectiveUserName();
+  const actorRole = actor?.role || getEffectiveUserRole();
+
+  if (actorRole !== 'SUPER_ADMIN' && actorRole !== 'ADMIN') {
+    throw new Error('Unauthorized: Insufficient permissions to update company details.');
+  }
+
+  const locals = getLocalCompanies();
+  const existing = locals.find((c) => c.id === companyId);
+  if (!existing) {
+    throw new Error('Company record not found.');
+  }
+
+  const now = new Date().toISOString();
+  const updatedCompany: CompanyRecord = {
+    ...existing,
+    ...input,
+    updated_at: now,
+  };
+
+  // Update local cache
+  const updatedLocals = locals.map((c) => (c.id === companyId ? updatedCompany : c));
+  setLocalCompanies(updatedLocals);
+
+  // Update Firestore
+  try {
+    const docRef = doc(db, 'companies', companyId);
+    await updateDoc(docRef, {
+      ...input,
+      updated_at: now,
+    });
+  } catch (err) {
+    console.warn('Firestore updateCompany notice:', err);
+  }
+
+  // Audit Log
+  try {
+    await createAuditLog({
+      action: 'company_updated',
+      entity_type: 'Company',
+      entity_id: companyId,
+      performed_by: actorId,
+      performed_by_name: actorName,
+      performed_by_role: actorRole as any,
+      description: `Administrator ${actorName} updated company details for "${updatedCompany.name}".`,
+      metadata: {
+        company_id: companyId,
+        company_name: updatedCompany.name,
+        updated_fields: Object.keys(input),
+      },
+    });
+  } catch (e) {}
+
+  return updatedCompany;
+}
+
+export async function setCompanyStatus(
+  companyId: string,
+  status: CompanyStatus,
+  actor?: UserProfile
+): Promise<void> {
+  const actorId = actor?.id || getEffectiveUserId();
+  const actorName = actor?.full_name || getEffectiveUserName();
+  const actorRole = actor?.role || getEffectiveUserRole();
+
+  if (actorRole !== 'SUPER_ADMIN') {
+    throw new Error('Unauthorized: Only a Super Administrator can activate or deactivate companies.');
+  }
+
+  const locals = getLocalCompanies();
+  const existing = locals.find((c) => c.id === companyId);
+  const now = new Date().toISOString();
+
+  // Update local cache
+  const updatedLocals = locals.map((c) =>
+    c.id === companyId ? { ...c, status, updated_at: now } : c
+  );
+  setLocalCompanies(updatedLocals);
+
+  // Update Firestore
+  try {
+    const docRef = doc(db, 'companies', companyId);
+    await updateDoc(docRef, {
+      status,
+      updated_at: now,
+    });
+  } catch (err) {
+    console.warn('Firestore setCompanyStatus notice:', err);
+  }
+
+  // Audit Log
+  try {
+    await createAuditLog({
+      action: status === 'ACTIVE' ? 'company_activated' : 'company_deactivated',
+      entity_type: 'Company',
+      entity_id: companyId,
+      performed_by: actorId,
+      performed_by_name: actorName,
+      performed_by_role: 'SUPER_ADMIN',
+      description: `Super Administrator ${actorName} changed company status of "${existing?.name || companyId}" to ${status}.`,
+      metadata: {
+        company_id: companyId,
+        company_name: existing?.name || companyId,
+        previous_status: existing?.status,
+        new_status: status,
+      },
+    });
+  } catch (e) {}
+}
+
+export function subscribeToCompanies(
+  callback: (companies: CompanyRecord[]) => void
+): Unsubscribe {
+  // Push local version immediately
+  callback(getLocalCompanies());
+
+  const handleCustomEvent = () => {
+    callback(getLocalCompanies());
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('crm_companies_changed', handleCustomEvent);
+  }
+
+  let firestoreUnsub: Unsubscribe = () => {};
+
+  try {
+    const colRef = collection(db, 'companies');
+    firestoreUnsub = onSnapshot(
+      colRef,
+      (snapshot) => {
+        const companiesMap = new Map<string, CompanyRecord>();
+        companiesMap.set(INITIAL_DEFAULT_COMPANY.id, INITIAL_DEFAULT_COMPANY);
+
+        getLocalCompanies().forEach((c) => companiesMap.set(c.id, c));
+
+        snapshot.forEach((docSnap) => {
+          companiesMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as CompanyRecord);
+        });
+
+        const merged = Array.from(companiesMap.values()).sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        setLocalCompanies(merged);
+        callback(merged);
+      },
+      (err) => {
+        console.warn('subscribeToCompanies fallback to local cache:', err);
+        callback(getLocalCompanies());
+      }
+    );
+  } catch (err) {
+    console.warn('Could not establish Firestore subscribeToCompanies:', err);
+  }
+
+  return () => {
+    firestoreUnsub();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('crm_companies_changed', handleCustomEvent);
+    }
+  };
+}
+
+export async function createCompanyUser(
+  companyId: string,
+  input: { full_name: string; email: string; phone?: string; role: 'ADMIN' | 'SALESMAN'; password?: string },
+  actor?: UserProfile
+): Promise<UserProfile> {
+  const actorId = actor?.id || getEffectiveUserId();
+  const actorName = actor?.full_name || getEffectiveUserName();
+  const actorRole = actor?.role || getEffectiveUserRole();
+
+  if (actorRole !== 'SUPER_ADMIN' && actorRole !== 'ADMIN') {
+    throw new Error('Unauthorized: Only Administrators can create team members.');
+  }
+
+  if (actorRole === 'ADMIN') {
+    const actorCompany = actor?.company_id || getEffectiveCompanyId();
+    if (actorCompany !== companyId) {
+      throw new Error('Unauthorized: Company Admins can only create users for their own company.');
+    }
+  }
+
+  const cleanEmail = input.email.trim().toLowerCase();
+  const cleanName = input.full_name.trim();
+
+  // Try creating in Firebase Auth using helper that avoids signing out current session
+  let authUid: string | null = null;
+  try {
+    authUid = await createAuthUserWithoutSignOut(
+      cleanEmail,
+      input.password || 'Welcome123!'
+    );
+  } catch (authErr: any) {
+    console.warn('Firebase Auth user creation notice (using generated ID fallback):', authErr?.message || authErr);
+  }
+
+  const now = new Date().toISOString();
+  const userId = authUid || 'usr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+
+  const newUser: UserProfile = {
+    id: userId,
+    full_name: cleanName,
+    email: cleanEmail,
+    role: input.role,
+    company_id: companyId,
+    phone: input.phone || '',
+    is_active: true,
+    created_at: now,
+    updated_at: now,
+  };
+
+  // Local storage save
+  const raw = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
+  let localUsers: UserProfile[] = raw ? JSON.parse(raw) : [];
+  localUsers = localUsers.filter((u) => u.email.toLowerCase() !== cleanEmail && u.id !== userId);
+  localUsers.push(newUser);
+  localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(localUsers));
+
+  // Firestore save
+  try {
+    const userDocRef = doc(db, 'users', userId);
+    await setDoc(userDocRef, newUser, { merge: true });
+  } catch (err) {
+    console.warn('Firestore createCompanyUser notice:', err);
+  }
+
+  // Audit Log
+  try {
+    await createAuditLog({
+      action: 'user_created',
+      entity_type: 'User',
+      entity_id: userId,
+      performed_by: actorId,
+      performed_by_name: actorName,
+      performed_by_role: actorRole as any,
+      target_user_id: userId,
+      target_user_name: cleanName,
+      description: `${actorRole === 'SUPER_ADMIN' ? 'Super Administrator' : 'Company Administrator'} ${actorName} created ${input.role} account for ${cleanName} (${cleanEmail}).`,
+      metadata: {
+        company_id: companyId,
+        user_id: userId,
+        role: input.role,
+        email: cleanEmail,
+      },
+    });
+  } catch (e) {}
+
+  return newUser;
+}
+
+export async function getCompanyUsers(companyId: string): Promise<UserProfile[]> {
+  const allUsers = await getAllUsers();
+  return allUsers.filter((u) => u.company_id === companyId);
+}
+
+export function subscribeToCompanyUsers(
+  companyId: string,
+  callback: (users: UserProfile[]) => void
+): Unsubscribe {
+  // Push initial local filter
+  getAllUsers().then((users) => {
+    callback(users.filter((u) => u.company_id === companyId));
+  });
+
+  const handleUsersChanged = () => {
+    getAllUsers().then((users) => {
+      callback(users.filter((u) => u.company_id === companyId));
+    });
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('crm_users_changed', handleUsersChanged);
+    window.addEventListener('storage', handleUsersChanged);
+  }
+
+  let firestoreUnsub: Unsubscribe = () => {};
+
+  try {
+    const usersCol = collection(db, 'users');
+    const q = query(usersCol, where('company_id', '==', companyId));
+    firestoreUnsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const users: UserProfile[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data();
+          users.push({
+            id: d.id,
+            ...data,
+            role: data.role as UserRole,
+            company_id: data.company_id,
+            is_active: data.is_active !== false,
+          } as UserProfile);
+        });
+        callback(users);
+      },
+      (err) => {
+        console.warn('subscribeToCompanyUsers firestore fallback:', err);
+        getAllUsers().then((users) => {
+          callback(users.filter((u) => u.company_id === companyId));
+        });
+      }
+    );
+  } catch (e) {
+    console.warn('Could not establish subscribeToCompanyUsers:', e);
+  }
+
+  return () => {
+    firestoreUnsub();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('crm_users_changed', handleUsersChanged);
+      window.removeEventListener('storage', handleUsersChanged);
+    }
+  };
+}
+
+/**
+ * Migration routine: Ensures all existing records without company_id are backfilled
+ * to the default company (Bahwan M&E LLC), preventing any data loss or orphaning!
+ */
+export async function ensureMultiTenantMigration(): Promise<void> {
+  // 1. Ensure Default Company exists in local storage
+  const companies = getLocalCompanies();
+  if (!companies.some((c) => c.id === DEFAULT_COMPANY_ID)) {
+    companies.unshift(INITIAL_DEFAULT_COMPANY);
+    setLocalCompanies(companies);
+  }
+
+  // Ensure Default Company exists in Firestore
+  try {
+    const compDoc = doc(db, 'companies', DEFAULT_COMPANY_ID);
+    const snap = await getDoc(compDoc);
+    if (!snap.exists()) {
+      const { id, ...data } = INITIAL_DEFAULT_COMPANY;
+      await setDoc(compDoc, data, { merge: true });
+    }
+  } catch (e) {
+    console.warn('Migration default company notice:', e);
+  }
+
+  // 2. Backfill local leads without company_id
+  const localLeads = getLocalLeads();
+  let leadsUpdated = false;
+  const migratedLeads = localLeads.map((lead) => {
+    if (!lead.company_id) {
+      leadsUpdated = true;
+      return { ...lead, company_id: DEFAULT_COMPANY_ID };
+    }
+    return lead;
+  });
+  if (leadsUpdated) {
+    setLocalLeads(migratedLeads);
+    notifyLeadsChanged();
+  }
+
+  // 3. Backfill local clients without company_id
+  const localClients = getLocalClients();
+  let clientsUpdated = false;
+  const migratedClients = localClients.map((client) => {
+    if (!client.company_id) {
+      clientsUpdated = true;
+      return { ...client, company_id: DEFAULT_COMPANY_ID };
+    }
+    return client;
+  });
+  if (clientsUpdated) {
+    setLocalClients(migratedClients);
+  }
+
+  // 4. Backfill local users without company_id (except Super Admin)
+  try {
+    const rawUsers = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
+    if (rawUsers) {
+      const users: UserProfile[] = JSON.parse(rawUsers);
+      let usersChanged = false;
+      const updatedUsers = users.map((u) => {
+        if (u.email?.toLowerCase() === 'itsyourmujahid@gmail.com') {
+          return { ...u, role: 'SUPER_ADMIN' as UserRole };
+        }
+        if (!u.company_id) {
+          usersChanged = true;
+          return { ...u, company_id: DEFAULT_COMPANY_ID };
+        }
+        return u;
+      });
+      if (usersChanged) {
+        localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(updatedUsers));
+      }
+    }
+  } catch (e) {}
+
+  // 5. Ensure Super Admin profile in Firestore
+  try {
+    const superAdminDoc = doc(db, 'users', 'uid-mujahid');
+    await setDoc(
+      superAdminDoc,
+      {
+        full_name: 'Mujahid Islam',
+        email: 'itsyourmujahid@gmail.com',
+        role: 'SUPER_ADMIN',
+        is_active: true,
+      },
+      { merge: true }
+    );
+  } catch (e) {}
+}
+
 
 
 

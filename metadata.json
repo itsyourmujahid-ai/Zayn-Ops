@@ -1,6 +1,6 @@
 {
   "name": "Lead Management & Sales CRM",
-  "description": "A professional digital sales CRM with Import/Export, Bulk Data Management, Sales Calendar, Appointment Management, Meetings, Site Visits, Pipeline Stages, and Client Management.",
+  "description": "A multi-company enterprise sales CRM SaaS platform with Super Admin console, company tenant management, role-based access control, appointment & pipeline tracking, and immutable audit logs.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

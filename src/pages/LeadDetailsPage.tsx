@@ -31,6 +31,8 @@ import {
   FolderPlus,
   Tag as TagIcon,
   GitMerge,
+  Trash2,
+  X,
 } from 'lucide-react';
 import {
   LeadRecord,
@@ -69,6 +71,7 @@ import {
   getLeads,
   getLocalNotDuplicates,
   markAsNotDuplicate,
+  deleteLead,
 } from '../lib/dal';
 import { findPotentialMatchesForLeadInput } from '../lib/dataQuality';
 import { RecordMergeModal } from '../components/data-quality/RecordMergeModal';
@@ -112,7 +115,7 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
   onBack,
   onNavigateToClient,
 }) => {
-  const { userProfile, currentUser, isAdmin } = useAuth();
+  const { userProfile, currentUser, isAdmin, isSuperAdmin } = useAuth();
 
   const [lead, setLead] = useState<LeadRecord | null>(null);
   const [activities, setActivities] = useState<LeadActivityRecord[]>([]);
@@ -120,6 +123,12 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
   const [usersList, setUsersList] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Deletion state
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
+  const [deleteReason, setDeleteReason] = useState<string>('');
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Modals state
   const [isLogModalOpen, setIsLogModalOpen] = useState<boolean>(false);
@@ -396,6 +405,29 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
     );
   };
 
+  // Handle Admin Lead Deletion (Phase X)
+  const handleConfirmDelete = async () => {
+    if (!lead) return;
+    if (!deleteReason.trim()) {
+      setDeleteError('Please specify an administrative deletion reason for compliance audit.');
+      return;
+    }
+    try {
+      setIsDeleting(true);
+      setDeleteError(null);
+      await deleteLead(lead.id, deleteReason.trim(), {
+        id: userProfile?.id || currentUser?.uid || 'admin',
+        name: userProfile?.full_name || currentUser?.displayName || 'Administrator',
+        role: (isSuperAdmin ? 'SUPER_ADMIN' : 'ADMIN') as any,
+      });
+      setIsDeleteModalOpen(false);
+      onBack();
+    } catch (err: any) {
+      setDeleteError(err?.message || 'Failed to delete lead.');
+      setIsDeleting(false);
+    }
+  };
+
   // Filtered Activities
   const filteredActivities = activities.filter((act) => {
     if (timelineFilter === 'all') return true;
@@ -579,6 +611,24 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
             <Edit3 className="h-3.5 w-3.5 text-slate-600" />
             <span>Edit Information</span>
           </button>
+
+          {/* Admin Delete Lead Button (Phase X) */}
+          {(isAdmin || isSuperAdmin) && (
+            <button
+              type="button"
+              id="lead-delete-btn"
+              onClick={() => {
+                setDeleteReason('');
+                setDeleteError(null);
+                setIsDeleteModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 shadow-2xs hover:bg-rose-100 transition cursor-pointer"
+              title="Permanently remove this lead (Admin only)"
+            >
+              <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+              <span>Delete Lead</span>
+            </button>
+          )}
 
           {/* Primary Log Activity Button */}
           <button
@@ -1442,6 +1492,84 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
             setDuplicateMatches((prev) => prev.filter((m) => m.pair_id !== activeMergeCandidate.pair_id));
           }}
         />
+      )}
+
+      {/* 9. Admin Delete Lead Confirmation Modal (Phase X) */}
+      {isDeleteModalOpen && lead && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-100 text-rose-600 shrink-0">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Delete Lead Record</h3>
+                  <p className="text-xs text-slate-500">Permanent administrative action</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-rose-100 bg-rose-50/70 p-3 text-xs text-rose-800 leading-relaxed">
+              You are about to permanently delete <strong className="text-rose-950 font-semibold">{lead.company_name}</strong>. All associated activities, follow-ups, and attachments will be permanently removed. This action is irreversible and will be logged in the immutable security audit trail.
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-700">
+                Reason for Deletion <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                rows={3}
+                value={deleteReason}
+                onChange={(e) => {
+                  setDeleteReason(e.target.value);
+                  if (deleteError) setDeleteError(null);
+                }}
+                placeholder="E.g., Duplicate record, invalid lead, customer requested removal..."
+                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              />
+              {deleteError && (
+                <p className="text-xs text-rose-600 font-medium">{deleteError}</p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(false)}
+                disabled={isDeleting}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-rose-700 transition disabled:opacity-50 cursor-pointer"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Confirm Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

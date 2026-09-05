@@ -19,6 +19,7 @@ import {
   Sparkles,
   Layers,
   Palette,
+  ShieldAlert,
 } from 'lucide-react';
 import { NavigationView } from '../../types/crm';
 import { useAuth } from '../../context/AuthContext';
@@ -59,7 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectView,
   onOpenAddLead,
 }) => {
-  const { currentUser, userProfile, signOut } = useAuth();
+  const { currentUser, userProfile, isSuperAdmin, currentCompany, signOut } = useAuth();
   const { themeConfig } = useTheme();
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [duplicateCount, setDuplicateCount] = useState<number>(0);
@@ -135,7 +136,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
       ],
     },
-    ...(userProfile?.role === 'ADMIN'
+    ...(userProfile?.role === 'ADMIN' || isSuperAdmin
       ? [
           {
             title: 'Enterprise Governance',
@@ -155,6 +156,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 id: 'audit' as NavigationView,
                 label: 'Audit Trail',
                 icon: ShieldCheck,
+              },
+            ],
+          },
+        ]
+      : []),
+    ...(isSuperAdmin
+      ? [
+          {
+            title: 'SaaS Platform',
+            items: [
+              {
+                id: 'super-admin' as NavigationView,
+                label: 'Super Admin Panel',
+                icon: ShieldAlert,
               },
             ],
           },
@@ -191,7 +206,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </span>
             </div>
             <div className="text-[11px] font-medium text-[var(--text-muted)] flex items-center gap-1">
-              <span>Enterprise Suite</span>
+              <span className="truncate max-w-[130px]" title={currentCompany?.name || 'ZaynOs Suite'}>
+                {isSuperAdmin ? 'Global SaaS Root' : (currentCompany?.name || 'Enterprise Suite')}
+              </span>
             </div>
           </div>
         </div>
