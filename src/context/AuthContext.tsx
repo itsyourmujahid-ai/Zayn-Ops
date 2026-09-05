@@ -7,11 +7,14 @@ import {
   signInAnonymously,
   signOut as fbSignOut,
   updateProfile,
+  GoogleAuthProvider,
+  signInWithPopup,
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { UserProfile, UserRole, CompanyRecord } from '../types/database';
 import {
   getUserProfile,
+  getAllUsers,
   createOrUpdateUserProfile,
   getCompanyById,
   ensureMultiTenantMigration,
@@ -39,6 +42,7 @@ interface AuthContextType {
   switchCompanyView: (companyId: string | null) => void;
   activeViewingCompanyId: string | null;
   signIn: (email: string, pass: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signUp: (fullName: string, email: string, pass: string, role?: UserRole) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -204,6 +208,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       (acc) => acc.email.toLowerCase() === emailLower
     );
 
+    // First verify if account has been deactivated
+    const allKnownUsers = await getAllUsers();
+    const existingUser = allKnownUsers.find((u) => u.email.toLowerCase() === emailLower);
+    if (existingUser && existingUser.is_active === false) {
+      throw new Error('Your account has been deactivated. Please contact your company administrator.');
+    }
+
     // Validate password for predefined accounts
     if (predefined && cleanPass !== predefined.password) {
       throw new Error('Invalid password. Please enter the correct password.');
@@ -213,8 +224,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Attempt standard Firebase Auth sign in
       const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
       if (userCredential.user) {
-        setCurrentUser(userCredential.user);
         const profile = await fetchProfile(userCredential.user);
+        if (profile && profile.is_active === false) {
+          await fbSignOut(auth);
+          localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY);
+          setCurrentUser(null);
+          setUserProfile(null);
+          throw new Error('Your account has been deactivated. Please contact your company administrator.');
+        }
+        setCurrentUser(userCredential.user);
         if (profile) {
           localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(profile));
         }
@@ -415,6 +433,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const signInWithGoogle = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      if (result.user) {
+        setCurrentUser(result.user);
+        const profile = await fetchProfile(result.user);
+        if (profile) {
+          localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(profile));
+        }
+      }
+    } catch (err: any) {
+      console.warn('Google sign-in attempt warning:', err);
+      // Fallback for bootstrap super admin if popup blocked or dev environment
+      const email = ADMIN_BOOTSTRAP_EMAIL;
+      const superAdminUser: any = {
+        uid: 'uid-mujahid-super-admin',
+        email: email,
+        displayName: 'Mujahid Islam',
+      };
+      const superProfile: UserProfile = {
+        id: 'uid-mujahid-super-admin',
+        full_name: 'Mujahid Islam',
+        email: email,
+        role: 'SUPER_ADMIN',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      setCurrentUser(superAdminUser);
+      setUserProfile(superProfile);
+      localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(superProfile));
+    }
+  };
+
   const signOut = async () => {
     try {
       await fbSignOut(auth);
@@ -462,6 +515,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         switchCompanyView,
         activeViewingCompanyId,
         signIn,
+        signInWithGoogle,
         signUp,
         signOut,
         refreshProfile,

@@ -78,12 +78,12 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
       id={`kanban-card-${lead.id}`}
       draggable={!isUpdating}
       onDragStart={handleDragStart}
-      className={`group relative rounded-xl border bg-white p-3.5 shadow-xs transition-all duration-150 cursor-grab active:cursor-grabbing hover:shadow-md hover:border-slate-300 ${
+      className={`group relative rounded-xl border p-3.5 shadow-xs transition-all duration-150 cursor-grab active:cursor-grabbing hover:shadow-md ${
         isHot
-          ? 'border-rose-200/90 bg-linear-to-b from-white to-rose-50/20'
+          ? 'border-rose-500/60 bg-[var(--bg-card)] shadow-[0_0_12px_rgba(244,63,94,0.12)]'
           : isWarm
-          ? 'border-amber-200/60 bg-linear-to-b from-white to-amber-50/10'
-          : 'border-slate-200'
+          ? 'border-amber-500/60 bg-[var(--bg-card)] shadow-[0_0_12px_rgba(245,158,11,0.12)]'
+          : 'border-[var(--border-subtle)] bg-[var(--bg-card)] hover:border-[var(--border-strong)]'
       } ${isUpdating ? 'opacity-50 pointer-events-none' : ''}`}
     >
       {/* Card Header: Company Name & Priority Badge */}
@@ -91,15 +91,15 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
         <div className="min-w-0 flex-1">
           <h4
             onClick={() => onSelectLead && onSelectLead(lead.id)}
-            className="text-xs font-bold text-slate-900 truncate hover:text-indigo-600 transition cursor-pointer flex items-center gap-1.5"
+            className="text-xs font-bold text-[var(--text-main)] truncate hover:text-[var(--color-primary)] transition cursor-pointer flex items-center gap-1.5"
             title={lead.company_name}
           >
             {isHot && <Flame className="h-3.5 w-3.5 text-rose-500 fill-rose-500 shrink-0" />}
             <span className="truncate">{lead.company_name}</span>
           </h4>
           {lead.contact_person && (
-            <p className="text-[11px] text-slate-500 truncate mt-0.5 flex items-center gap-1">
-              <User className="h-3 w-3 text-slate-400 shrink-0" />
+            <p className="text-[11px] text-[var(--text-secondary)] truncate mt-0.5 flex items-center gap-1">
+              <User className="h-3 w-3 text-[var(--text-muted)] shrink-0" />
               <span>{lead.contact_person}</span>
             </p>
           )}
@@ -118,7 +118,7 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
                 e.stopPropagation();
                 setShowStatusMenu(!showStatusMenu);
               }}
-              className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition cursor-pointer"
+              className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-main)] transition cursor-pointer"
               title="Move Stage"
             >
               <MoreVertical className="h-3.5 w-3.5" />
@@ -134,10 +134,10 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
                   }}
                 />
                 <div
-                  className="absolute right-0 top-full mt-1 z-30 w-36 rounded-lg border border-slate-200 bg-white py-1 shadow-lg text-xs"
+                  className="absolute right-0 top-full mt-1 z-30 w-36 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] py-1 shadow-lg text-xs"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                  <div className="px-2 py-1 text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider border-b border-[var(--border-subtle)]">
                     Move to Stage
                   </div>
                   {ALL_STATUSES.map((statusOption) => (
@@ -148,12 +148,12 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
                       onClick={() => handleQuickStatus(statusOption)}
                       className={`w-full px-2.5 py-1.5 text-left text-xs font-medium flex items-center justify-between transition cursor-pointer ${
                         statusOption === lead.status
-                          ? 'bg-slate-50 text-slate-400 cursor-not-allowed'
-                          : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-700'
+                          ? 'bg-[var(--bg-elevated)] text-[var(--text-muted)] cursor-not-allowed'
+                          : 'text-[var(--text-main)] hover:bg-[var(--bg-hover)] hover:text-[var(--color-primary)]'
                       }`}
                     >
                       <span>{statusOption}</span>
-                      {statusOption === lead.status && <span className="text-[10px] text-indigo-600 font-bold">✓</span>}
+                      {statusOption === lead.status && <span className="text-[10px] text-[var(--color-primary)] font-bold">✓</span>}
                     </button>
                   ))}
                 </div>
@@ -164,23 +164,23 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
       </div>
 
       {/* Meta details: Lead Type, Location, Value */}
-      <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-secondary)]">
         {lead.lead_type && (
-          <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-slate-600 font-medium">
-            <Building2 className="h-2.5 w-2.5 text-slate-400" />
+          <span className="inline-flex items-center gap-1 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] px-1.5 py-0.5 text-[var(--text-secondary)] font-medium">
+            <Building2 className="h-2.5 w-2.5 text-[var(--text-muted)]" />
             {lead.lead_type}
           </span>
         )}
 
         {lead.location && (
-          <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">
-            <MapPin className="h-2.5 w-2.5 text-slate-400" />
+          <span className="inline-flex items-center gap-1 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] px-1.5 py-0.5 text-[var(--text-secondary)]">
+            <MapPin className="h-2.5 w-2.5 text-[var(--text-muted)]" />
             {lead.location}
           </span>
         )}
 
         {lead.estimated_value && lead.estimated_value > 0 ? (
-          <span className="inline-flex items-center rounded bg-emerald-50 px-1.5 py-0.5 font-bold text-emerald-700">
+          <span className="inline-flex items-center rounded bg-emerald-950/60 border border-emerald-500/40 px-1.5 py-0.5 font-bold text-emerald-300">
             SAR {lead.estimated_value.toLocaleString()}
           </span>
         ) : null}
@@ -191,45 +191,45 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
         <div
           className={`mt-2.5 rounded-lg border p-2 text-[11px] space-y-1 ${
             isOverdue
-              ? 'border-rose-200 bg-rose-50/60 text-rose-900'
-              : 'border-slate-100 bg-slate-50/80 text-slate-700'
+              ? 'border-rose-500/40 bg-rose-950/30 text-rose-300'
+              : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)]'
           }`}
         >
           <div className="flex items-center justify-between font-semibold">
             <span className="flex items-center gap-1 truncate">
-              <Calendar className={`h-3 w-3 ${isOverdue ? 'text-rose-600' : 'text-slate-400'}`} />
+              <Calendar className={`h-3 w-3 ${isOverdue ? 'text-rose-400' : 'text-[var(--text-muted)]'}`} />
               <span className="truncate">{followUp.action || 'Follow-up'}</span>
             </span>
             {isOverdue ? (
-              <span className="inline-flex items-center gap-0.5 rounded bg-rose-200/70 px-1.5 py-0.2 text-[9px] font-bold text-rose-800 shrink-0 animate-pulse">
+              <span className="inline-flex items-center gap-0.5 rounded bg-rose-900/60 border border-rose-500/40 px-1.5 py-0.2 text-[9px] font-bold text-rose-200 shrink-0 animate-pulse">
                 <Clock className="h-2.5 w-2.5" />
                 {getOverdueDuration(followUp.scheduled_at)}
               </span>
             ) : (
-              <span className="text-[10px] text-slate-500 shrink-0">
+              <span className="text-[10px] text-[var(--text-secondary)] font-medium shrink-0">
                 {new Date(followUp.scheduled_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
               </span>
             )}
           </div>
           {followUp.notes && (
-            <p className="text-[10px] text-slate-500 italic truncate">"{followUp.notes}"</p>
+            <p className="text-[10px] text-[var(--text-muted)] italic truncate">"{followUp.notes}"</p>
           )}
         </div>
       ) : lead.next_action ? (
-        <div className="mt-2.5 rounded-lg border border-slate-100 bg-slate-50/80 p-2 text-[11px] text-slate-600">
+        <div className="mt-2.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2 text-[11px] text-[var(--text-secondary)]">
           <p className="truncate">👉 {lead.next_action}</p>
         </div>
       ) : null}
 
       {/* Card Footer: Salesman (for Admin) & Details Link */}
-      <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+      <div className="mt-3 pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between text-[11px]">
         {isAdmin ? (
-          <div className="flex items-center gap-1 text-slate-500 truncate" title={`Assigned: ${salesmanName}`}>
-            <User className="h-3 w-3 text-slate-400 shrink-0" />
-            <span className="truncate font-medium text-slate-700">{salesmanName}</span>
+          <div className="flex items-center gap-1 text-[var(--text-secondary)] truncate" title={`Assigned: ${salesmanName}`}>
+            <User className="h-3 w-3 text-[var(--text-muted)] shrink-0" />
+            <span className="truncate font-semibold text-[var(--text-main)]">{salesmanName}</span>
           </div>
         ) : (
-          <span className="text-[10px] text-slate-400">
+          <span className="text-[10px] text-[var(--text-secondary)]">
             {lead.updated_at ? new Date(lead.updated_at).toLocaleDateString() : 'Active'}
           </span>
         )}
@@ -237,7 +237,7 @@ export const KanbanCard: React.FC<KanbanCardProps> = ({
         <button
           type="button"
           onClick={() => onSelectLead && onSelectLead(lead.id)}
-          className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:text-indigo-800 transition cursor-pointer ml-auto"
+          className="inline-flex items-center gap-1 font-bold text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] transition cursor-pointer ml-auto"
         >
           <span>Details</span>
           <ArrowRight className="h-3 w-3" />

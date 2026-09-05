@@ -27,19 +27,19 @@ export const MonthView: React.FC<MonthViewProps> = ({
   const days = getMonthViewDays(currentDate);
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-2xs overflow-hidden">
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] shadow-2xs overflow-hidden">
       {/* Day of Week Headers */}
-      <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50/80 text-center text-xs font-bold text-slate-600">
+      <div className="grid grid-cols-7 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-center text-xs font-bold text-[var(--text-secondary)]">
         {WEEK_DAYS.map((dayName, idx) => (
           <div
             key={dayName}
-            className={`py-2.5 border-r border-slate-200 last:border-r-0 ${
-              idx === 5 || idx === 6 ? 'text-slate-400 bg-slate-100/50' : ''
+            className={`py-2.5 border-r border-[var(--border-subtle)] last:border-r-0 ${
+              idx === 5 || idx === 6 ? 'text-[var(--text-muted)] bg-[var(--bg-base)]/40' : ''
             }`}
           >
             <span>{dayName}</span>
             {(idx === 5 || idx === 6) && (
-              <span className="block text-[9px] font-normal text-slate-400">Weekend</span>
+              <span className="block text-[9px] font-semibold text-[var(--text-muted)]">Weekend</span>
             )}
           </div>
         ))}
@@ -55,23 +55,23 @@ export const MonthView: React.FC<MonthViewProps> = ({
             <div
               key={day.dateString}
               id={`month-day-${day.dateString}`}
-              className={`min-h-[110px] sm:min-h-[130px] p-1.5 border-b border-r border-slate-200 last:border-r-0 flex flex-col transition group ${
+              className={`min-h-[110px] sm:min-h-[130px] p-1.5 border-b border-r border-[var(--border-subtle)] last:border-r-0 flex flex-col transition group ${
                 !day.isCurrentMonth
-                  ? 'bg-slate-50/50 text-slate-400'
+                  ? 'bg-[var(--bg-base)]/60 text-[var(--text-muted)]'
                   : day.isWeekend
-                  ? 'bg-slate-50/20'
-                  : 'bg-white'
-              } ${day.isToday ? 'bg-indigo-50/30' : ''}`}
+                  ? 'bg-[var(--bg-base)]/30'
+                  : 'bg-[var(--bg-card)]'
+              } ${day.isToday ? 'bg-[var(--color-primary-subtle)]/30' : ''}`}
             >
               {/* Day Header */}
               <div className="flex items-center justify-between mb-1 px-1">
                 <span
                   className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
                     day.isToday
-                      ? 'bg-indigo-600 text-white shadow-xs'
+                      ? 'bg-[var(--color-primary)] text-white shadow-xs'
                       : day.isCurrentMonth
-                      ? 'text-slate-700'
-                      : 'text-slate-400'
+                      ? 'text-[var(--text-main)] font-extrabold'
+                      : 'text-[var(--text-muted)]'
                   }`}
                 >
                   {day.date.getDate()}
@@ -81,7 +81,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
                 <button
                   type="button"
                   onClick={() => onSelectDate(day.date)}
-                  className="opacity-0 group-hover:opacity-100 h-5 w-5 rounded-md flex items-center justify-center text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition cursor-pointer"
+                  className="opacity-0 group-hover:opacity-100 h-5 w-5 rounded-md flex items-center justify-center text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--color-primary)] transition cursor-pointer"
                   title="Schedule on this day"
                 >
                   <Plus className="h-3 w-3" />
@@ -100,13 +100,13 @@ export const MonthView: React.FC<MonthViewProps> = ({
                       key={event.id}
                       type="button"
                       onClick={() => onSelectEvent(event)}
-                      className={`w-full text-left truncate rounded-md px-1.5 py-0.5 text-[11px] font-medium border flex items-center gap-1 transition cursor-pointer shadow-2xs hover:brightness-95 ${
+                      className={`w-full text-left truncate rounded-md px-1.5 py-0.5 text-[11px] font-semibold border flex items-center gap-1 transition cursor-pointer shadow-2xs hover:brightness-110 ${
                         event.status === 'completed'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 line-through opacity-75'
+                          ? 'bg-emerald-950/50 text-emerald-300 border-emerald-500/40 line-through opacity-75'
                           : event.status === 'cancelled'
-                          ? 'bg-slate-100 text-slate-500 border-slate-200 line-through opacity-60'
+                          ? 'bg-[var(--bg-elevated)] text-[var(--text-muted)] border-[var(--border-subtle)] line-through opacity-60'
                           : isOverdue
-                          ? 'bg-rose-50 text-rose-700 border-rose-200 font-bold'
+                          ? 'bg-rose-950/50 text-rose-200 border-rose-500/40 font-bold'
                           : `${badge.badgeBg} ${badge.badgeText} ${badge.badgeBorder}`
                       }`}
                       title={`${event.action}: ${event.company_name} (${timeStr})`}

@@ -27,6 +27,7 @@ import { SearchPage } from './pages/SearchPage';
 import { SegmentsPage } from './pages/SegmentsPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { SuperAdminPage } from './pages/SuperAdminPage';
+import { TeamPage } from './pages/TeamPage';
 import { GlobalSearchModal } from './components/search/GlobalSearchModal';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthPage } from './pages/AuthPage';
@@ -83,142 +84,187 @@ const AuthenticatedCRM: React.FC = () => {
     salesman?: string;
   }>({});
 
-  // Sync initial URL path (e.g. /leads/lead_123, /clients/client_123, /search)
+  // Route URL helper
+  const getViewPath = (view: NavigationView, query?: string): string => {
+    switch (view) {
+      case 'dashboard':
+        return '/';
+      case 'leads':
+        return '/leads';
+      case 'pipeline':
+        return '/pipeline';
+      case 'followups':
+        return '/followups';
+      case 'calendar':
+        return '/calendar';
+      case 'clients':
+        return '/clients';
+      case 'segments':
+        return '/segments';
+      case 'reports':
+        return '/reports';
+      case 'team':
+        return '/team';
+      case 'notifications':
+        return '/notifications';
+      case 'data-quality':
+        return '/data-quality';
+      case 'data-management':
+        return '/data-management';
+      case 'audit':
+        return '/audit';
+      case 'super-admin':
+        return '/super-admin';
+      case 'settings':
+        return '/settings';
+      case 'search':
+        return query ? `/search?q=${encodeURIComponent(query)}` : '/search';
+      default:
+        return '/';
+    }
+  };
+
+  // Sync initial URL path and popstate
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const path = window.location.pathname;
-      if (path.startsWith('/leads/')) {
-        const id = path.replace('/leads/', '').trim();
-        if (id) {
-          setSelectedLeadId(id);
-          setCurrentView('leads');
+      const applyPathState = (pathname: string, searchStr: string, isPopState: boolean = false) => {
+        if (pathname.startsWith('/leads/')) {
+          const id = pathname.replace('/leads/', '').trim();
+          if (id) {
+            setSelectedLeadId(id);
+            setSelectedClientId(null);
+            setCurrentView('leads');
+            return;
+          }
         }
-      } else if (path.startsWith('/clients/')) {
-        const id = path.replace('/clients/', '').trim();
-        if (id) {
-          setSelectedClientId(id);
-          setCurrentView('clients');
+        if (pathname.startsWith('/clients/')) {
+          const id = pathname.replace('/clients/', '').trim();
+          if (id) {
+            setSelectedClientId(id);
+            setSelectedLeadId(null);
+            setCurrentView('clients');
+            return;
+          }
         }
-      } else if (path === '/clients') {
-        setCurrentView('clients');
-      } else if (path === '/segments') {
-        setCurrentView('segments');
-      } else if (path === '/search' || path.startsWith('/search')) {
-        const params = new URLSearchParams(window.location.search);
-        setSearchQueryParam(params.get('q') || '');
-        setCurrentView('search');
-      } else if (path === '/calendar') {
-        setCurrentView('calendar');
-      } else if (path === '/data-management') {
-        if (userProfile?.role === 'ADMIN') {
-          setCurrentView('data-management');
-        } else {
-          addToast(
-            'error',
-            'Access Denied',
-            'Administrator credentials required to access Data Management.'
-          );
-          recordSecurityAuditLog({
-            action: 'security_unauthorized_action',
-            description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted direct URL navigation to /data-management.`,
-            metadata: { path, user_role: userProfile?.role || 'SALESMAN', blocked: true },
-          });
-          window.history.replaceState({}, '', '/');
-        }
-      } else if (path === '/audit' || path === '/audit-logs') {
-        if (userProfile?.role === 'ADMIN') {
-          setCurrentView('audit');
-        } else {
-          addToast(
-            'error',
-            'Access Denied',
-            'Administrator credentials required to access system Audit Logs.'
-          );
-          recordSecurityAuditLog({
-            action: 'security_unauthorized_action',
-            description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted direct URL navigation to /audit.`,
-            metadata: { path, user_role: userProfile?.role || 'SALESMAN', blocked: true },
-          });
-          window.history.replaceState({}, '', '/');
-        }
-      } else if (path === '/super-admin') {
-        if (isSuperAdmin) {
-          setCurrentView('super-admin');
-        } else {
-          addToast(
-            'error',
-            'Access Denied',
-            'Super Administrator credentials required to access Super Admin Panel.'
-          );
-          recordSecurityAuditLog({
-            action: 'security_unauthorized_action',
-            description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted direct URL navigation to /super-admin.`,
-            metadata: { path, user_role: userProfile?.role || 'SALESMAN', blocked: true },
-          });
-          window.history.replaceState({}, '', '/');
-        }
-      }
 
-      const handlePopState = () => {
-        const currentPath = window.location.pathname;
-        if (currentPath.startsWith('/leads/')) {
-          const id = currentPath.replace('/leads/', '').trim();
-          setSelectedLeadId(id || null);
-          setSelectedClientId(null);
+        setSelectedLeadId(null);
+        setSelectedClientId(null);
+
+        if (pathname === '/leads') {
           setCurrentView('leads');
-        } else if (currentPath.startsWith('/clients/')) {
-          const id = currentPath.replace('/clients/', '').trim();
-          setSelectedClientId(id || null);
-          setSelectedLeadId(null);
+        } else if (pathname === '/clients') {
           setCurrentView('clients');
-        } else if (currentPath === '/clients') {
-          setSelectedClientId(null);
-          setSelectedLeadId(null);
-          setCurrentView('clients');
-        } else if (currentPath === '/segments') {
-          setSelectedClientId(null);
-          setSelectedLeadId(null);
-          setCurrentView('segments');
-        } else if (currentPath === '/search' || currentPath.startsWith('/search')) {
-          const params = new URLSearchParams(window.location.search);
-          setSearchQueryParam(params.get('q') || '');
-          setSelectedClientId(null);
-          setSelectedLeadId(null);
-          setCurrentView('search');
-        } else if (currentPath === '/calendar') {
-          setSelectedClientId(null);
-          setSelectedLeadId(null);
+        } else if (pathname === '/pipeline') {
+          setCurrentView('pipeline');
+        } else if (pathname === '/followups') {
+          setCurrentView('followups');
+        } else if (pathname === '/calendar') {
           setCurrentView('calendar');
-        } else if (currentPath === '/data-management') {
-          setSelectedClientId(null);
-          setSelectedLeadId(null);
+        } else if (pathname === '/segments') {
+          setCurrentView('segments');
+        } else if (pathname === '/reports') {
+          setCurrentView('reports');
+        } else if (pathname === '/notifications') {
+          setCurrentView('notifications');
+        } else if (pathname === '/data-quality') {
+          setCurrentView('data-quality');
+        } else if (pathname === '/settings') {
+          setCurrentView('settings');
+        } else if (pathname === '/search' || pathname.startsWith('/search')) {
+          const params = new URLSearchParams(searchStr);
+          setSearchQueryParam(params.get('q') || '');
+          setCurrentView('search');
+        } else if (pathname === '/team') {
+          if (userProfile?.role === 'ADMIN' || isSuperAdmin) {
+            setCurrentView('team');
+          } else {
+            if (!isPopState) {
+              addToast(
+                'error',
+                'Access Denied',
+                'Company Administrator credentials required to access Team Management.'
+              );
+              recordSecurityAuditLog({
+                action: 'security_unauthorized_action',
+                description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted direct URL navigation to /team.`,
+                metadata: { path: pathname, user_role: userProfile?.role || 'SALESMAN', blocked: true },
+              });
+              window.history.replaceState({}, '', '/');
+            }
+            setCurrentView('dashboard');
+          }
+        } else if (pathname === '/data-management') {
           if (userProfile?.role === 'ADMIN' || isSuperAdmin) {
             setCurrentView('data-management');
           } else {
+            if (!isPopState) {
+              addToast(
+                'error',
+                'Access Denied',
+                'Administrator credentials required to access Data Management.'
+              );
+              recordSecurityAuditLog({
+                action: 'security_unauthorized_action',
+                description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted direct URL navigation to /data-management.`,
+                metadata: { path: pathname, user_role: userProfile?.role || 'SALESMAN', blocked: true },
+              });
+              window.history.replaceState({}, '', '/');
+            }
             setCurrentView('dashboard');
           }
-        } else if (currentPath === '/audit' || currentPath === '/audit-logs') {
+        } else if (pathname === '/audit' || pathname === '/audit-logs') {
           if (userProfile?.role === 'ADMIN' || isSuperAdmin) {
             setCurrentView('audit');
           } else {
+            if (!isPopState) {
+              addToast(
+                'error',
+                'Access Denied',
+                'Administrator credentials required to access system Audit Logs.'
+              );
+              recordSecurityAuditLog({
+                action: 'security_unauthorized_action',
+                description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted direct URL navigation to /audit.`,
+                metadata: { path: pathname, user_role: userProfile?.role || 'SALESMAN', blocked: true },
+              });
+              window.history.replaceState({}, '', '/');
+            }
             setCurrentView('dashboard');
           }
-        } else if (currentPath === '/super-admin') {
+        } else if (pathname === '/super-admin') {
           if (isSuperAdmin) {
             setCurrentView('super-admin');
           } else {
+            if (!isPopState) {
+              addToast(
+                'error',
+                'Access Denied',
+                'Super Administrator credentials required to access Super Admin Panel.'
+              );
+              recordSecurityAuditLog({
+                action: 'security_unauthorized_action',
+                description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted direct URL navigation to /super-admin.`,
+                metadata: { path: pathname, user_role: userProfile?.role || 'SALESMAN', blocked: true },
+              });
+              window.history.replaceState({}, '', '/');
+            }
             setCurrentView('dashboard');
           }
         } else {
-          setSelectedLeadId(null);
-          setSelectedClientId(null);
+          setCurrentView('dashboard');
         }
+      };
+
+      applyPathState(window.location.pathname, window.location.search, false);
+
+      const handlePopState = () => {
+        applyPathState(window.location.pathname, window.location.search, true);
       };
 
       window.addEventListener('popstate', handlePopState);
       return () => window.removeEventListener('popstate', handlePopState);
     }
-  }, []);
+  }, [userProfile?.role, isSuperAdmin]);
 
   const handleSelectLead = (leadId: string) => {
     setSelectedClientId(null);
@@ -231,7 +277,8 @@ const AuthenticatedCRM: React.FC = () => {
   const handleDeselectLead = () => {
     setSelectedLeadId(null);
     if (typeof window !== 'undefined' && window.history) {
-      window.history.pushState({}, '', '/');
+      const targetPath = currentView === 'leads' ? '/leads' : getViewPath(currentView, searchQueryParam);
+      window.history.pushState({}, '', targetPath);
     }
   };
 
@@ -274,6 +321,21 @@ const AuthenticatedCRM: React.FC = () => {
       return;
     }
 
+    // Company Admin Security check for Team Management navigation
+    if (view === 'team' && userProfile?.role !== 'ADMIN' && !isSuperAdmin) {
+      addToast(
+        'error',
+        'Access Denied',
+        'Company Administrator credentials required to access Team Management.'
+      );
+      recordSecurityAuditLog({
+        action: 'security_unauthorized_action',
+        description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted unauthorized navigation to Team Management.`,
+        metadata: { attempted_view: 'team', user_role: userProfile?.role || 'SALESMAN', status: 'BLOCKED' },
+      });
+      return;
+    }
+
     // Phase M: RBAC Security check for Audit Logs navigation
     if (view === 'audit' && userProfile?.role !== 'ADMIN' && !isSuperAdmin) {
       addToast(
@@ -306,23 +368,8 @@ const AuthenticatedCRM: React.FC = () => {
     setSelectedLeadId(null);
     setSelectedClientId(null);
     if (typeof window !== 'undefined' && window.history) {
-      if (view === 'super-admin') {
-        window.history.pushState({}, '', '/super-admin');
-      } else if (view === 'clients') {
-        window.history.pushState({}, '', '/clients');
-      } else if (view === 'calendar') {
-        window.history.pushState({}, '', '/calendar');
-      } else if (view === 'data-management') {
-        window.history.pushState({}, '', '/data-management');
-      } else if (view === 'search') {
-        window.history.pushState(
-          {},
-          '',
-          searchQueryParam ? `/search?q=${encodeURIComponent(searchQueryParam)}` : '/search'
-        );
-      } else {
-        window.history.pushState({}, '', '/');
-      }
+      const targetUrl = getViewPath(view, searchQueryParam);
+      window.history.pushState({}, '', targetUrl);
     }
 
     if (options?.leadFilter) {
@@ -532,6 +579,8 @@ const AuthenticatedCRM: React.FC = () => {
             onSelectView={handleViewChange}
           />
         );
+      case 'team':
+        return <TeamPage onSelectLead={handleSelectLead} />;
       case 'notifications':
         return (
           <NotificationsPage

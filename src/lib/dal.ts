@@ -1016,6 +1016,12 @@ export function isEffectiveSuperAdmin(): boolean {
   return getEffectiveUserRole() === 'SUPER_ADMIN';
 }
 
+export function isUserAdminOrSuper(role?: UserRole | string | null): boolean {
+  if (isEffectiveSuperAdmin()) return true;
+  const upper = String(role || getEffectiveUserRole()).toUpperCase();
+  return upper === 'ADMIN' || upper === 'SUPER_ADMIN';
+}
+
 export function getEffectiveCompanyId(): string {
   if (typeof localStorage !== 'undefined') {
     try {
@@ -1351,7 +1357,7 @@ export async function createLead(
   }
 
   const now = new Date().toISOString();
-  const isUserAdmin = currentUserRole?.toUpperCase() === 'ADMIN';
+  const isUserAdmin = isUserAdminOrSuper(currentUserRole);
   const assignedTo = isUserAdmin && input.assigned_to ? input.assigned_to : userId;
 
   const generatedId = 'lead_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
@@ -2132,7 +2138,7 @@ export function subscribeToAllActivities(
   limitCount: number = 300
 ): Unsubscribe {
   const userId = targetUserId || getEffectiveUserId();
-  const isUserAdmin = userRole?.toUpperCase() === 'ADMIN';
+  const isUserAdmin = isUserAdminOrSuper(userRole);
 
   const filterAndEmit = (rawList: LeadActivityRecord[]) => {
     let filtered = rawList;
@@ -2775,7 +2781,7 @@ export function subscribeToFollowUps(
   targetUserId?: string
 ): Unsubscribe {
   const userId = targetUserId || getEffectiveUserId();
-  const isUserAdmin = userRole?.toUpperCase() === 'ADMIN';
+  const isUserAdmin = isUserAdminOrSuper(userRole);
 
   const filterAndEmit = (rawList: FollowUpRecord[]) => {
     let filtered = rawList;
@@ -2980,7 +2986,7 @@ export async function uploadLeadAttachment(
 
   // Check lead access
   const lead = await getLeadById(input.lead_id);
-  const isUserAdmin = currentUserRole?.toUpperCase() === 'ADMIN';
+  const isUserAdmin = isUserAdminOrSuper(currentUserRole);
   if (!isUserAdmin && lead && lead.assigned_to !== userId && lead.created_by !== userId) {
     throw new Error('Permission Denied: You are not authorized to attach files to this lead.');
   }
@@ -3119,7 +3125,7 @@ export async function deleteLeadAttachment(
   const userName = performerName || getUserDisplayName(userId);
   const now = new Date().toISOString();
 
-  const isUserAdmin = currentUserRole?.toUpperCase() === 'ADMIN';
+  const isUserAdmin = isUserAdminOrSuper(currentUserRole);
   const lead = await getLeadById(leadId);
   const isAssignedSalesman = lead && (lead.assigned_to === userId || lead.created_by === userId);
 
@@ -3554,7 +3560,7 @@ export async function checkAndGenerateFollowUpReminders(
   if (!userId) return;
 
   try {
-    const isUserAdmin = userRole?.toUpperCase() === 'ADMIN';
+    const isUserAdmin = isUserAdminOrSuper(userRole);
     const allFollowUps = getLocalFollowUps();
     const followUps = isUserAdmin
       ? allFollowUps
@@ -3569,7 +3575,7 @@ export async function checkAndGenerateFollowUpReminders(
 
     for (const fu of pendingFollowups) {
       const isResponsible = fu.assigned_to === userId || (!fu.assigned_to && fu.created_by === userId);
-      if (!isResponsible && userRole?.toUpperCase() !== 'ADMIN') continue;
+      if (!isResponsible && !isUserAdmin) continue;
 
       const recipientId = isResponsible ? userId : (fu.assigned_to || userId);
       const fuDateStr = fu.scheduled_at ? fu.scheduled_at.slice(0, 10) : '';
@@ -3590,7 +3596,7 @@ export async function checkAndGenerateFollowUpReminders(
         });
 
         // If user is admin and follow-up belongs to another salesman, notify admin of critical overdue
-        if (userRole?.toUpperCase() === 'ADMIN' && fu.assigned_to && fu.assigned_to !== userId) {
+        if (isUserAdmin && fu.assigned_to && fu.assigned_to !== userId) {
           const adminEventKey = `admin_escalate_overdue_${fu.id}_${fuDateStr}`;
           await createNotification({
             recipient_id: userId,
@@ -3700,9 +3706,7 @@ export async function getAuditLogs(options?: {
   entityType?: string;
   userRole?: UserRole;
 }): Promise<AuditLogRecord[]> {
-  const isUserAdmin =
-    options?.userRole?.toUpperCase() === 'ADMIN' ||
-    getEffectiveUserRole().toUpperCase() === 'ADMIN';
+  const isUserAdmin = isUserAdminOrSuper(options?.userRole);
 
   if (!isUserAdmin) {
     // Record security audit log for unauthorized query attempt
@@ -3766,7 +3770,7 @@ export function subscribeToAuditLogs(
   onError?: (err: any) => void,
   limitCount: number = 100
 ): () => void {
-  const isUserAdmin = getEffectiveUserRole().toUpperCase() === 'ADMIN';
+  const isUserAdmin = isUserAdminOrSuper();
   if (!isUserAdmin) {
     onUpdate([]);
     if (onError) onError(new Error('Access Denied: Administrator privileges required.'));
@@ -3879,7 +3883,7 @@ export async function createClientFromLead(
   const currentUserId = getEffectiveUserId();
   const currentUserName = getEffectiveUserName();
   const role = currentUserRole || getEffectiveUserRole();
-  const isAdmin = role.toUpperCase() === 'ADMIN';
+  const isAdmin = isUserAdminOrSuper(currentUserRole);
 
   // 1. Validate source lead exists
   const sourceLead = await getLeadById(input.lead_id, role);
@@ -4037,8 +4041,7 @@ export async function getClientById(clientId: string, userRole?: UserRole): Prom
   const localList = getLocalClients();
   const local = localList.find((c) => c.id === clientId);
   const userId = getEffectiveUserId();
-  const role = userRole || getEffectiveUserRole();
-  const isAdmin = role.toUpperCase() === 'ADMIN';
+  const isAdmin = isUserAdminOrSuper(userRole);
 
   // Security Policy Check: Non-admins cannot access clients not owned by them
   if (local && !isAdmin && local.owner_id !== userId) {
@@ -4116,7 +4119,7 @@ export async function getClients(options?: {
   includeMerged?: boolean;
 }): Promise<ClientRecord[]> {
   const userId = getEffectiveUserId();
-  const isUserAdmin = options?.userRole?.toUpperCase() === 'ADMIN';
+  const isUserAdmin = isUserAdminOrSuper(options?.userRole);
 
   let local = getLocalClients();
   if (!options?.includeMerged) {
@@ -4145,7 +4148,7 @@ export function subscribeToClients(
   includeMerged: boolean = false
 ): Unsubscribe {
   const userId = targetUserId || getEffectiveUserId();
-  const isUserAdmin = (userRole || getEffectiveUserRole()).toUpperCase() === 'ADMIN';
+  const isUserAdmin = isUserAdminOrSuper(userRole);
 
   const filterAndEmit = (rawList: ClientRecord[]) => {
     let filtered = rawList;
@@ -4230,7 +4233,7 @@ export function subscribeToSingleClient(
   targetUserId?: string
 ): Unsubscribe {
   const userId = targetUserId || getEffectiveUserId();
-  const isUserAdmin = (userRole || getEffectiveUserRole()).toUpperCase() === 'ADMIN';
+  const isUserAdmin = isUserAdminOrSuper(userRole);
 
   // Push local version immediately if authorized
   const localList = getLocalClients();
@@ -4240,7 +4243,9 @@ export function subscribeToSingleClient(
     if (onError) onError(new Error('Access Notice: You do not have permission to view this customer account.'));
     return () => {};
   }
-  onUpdate(found);
+  if (found) {
+    onUpdate(found);
+  }
 
   const handleClientsChanged = () => {
     const freshLocal = getLocalClients().find((c) => c.id === clientId) || null;
@@ -4249,7 +4254,9 @@ export function subscribeToSingleClient(
       if (onError) onError(new Error('Access Notice: You do not have permission to view this customer account.'));
       return;
     }
-    onUpdate(freshLocal);
+    if (freshLocal) {
+      onUpdate(freshLocal);
+    }
   };
 
   if (typeof window !== 'undefined') {
@@ -4278,19 +4285,34 @@ export function subscribeToSingleClient(
           setLocalClients(updated);
           onUpdate(client);
         } else {
-          onUpdate(null);
+          // Fallback to local cache if document not yet synced to Firestore
+          const freshLocal = getLocalClients().find((c) => c.id === clientId) || null;
+          if (freshLocal) {
+            if (!isUserAdmin && freshLocal.owner_id !== userId) {
+              onUpdate(null);
+              if (onError) onError(new Error('Access Notice: You do not have permission to view this customer account.'));
+              return;
+            }
+            onUpdate(freshLocal);
+          } else {
+            onUpdate(null);
+          }
         }
       },
       (err) => {
         console.warn('Firestore subscribeToSingleClient fallback:', err);
         const freshLocal = getLocalClients().find((c) => c.id === clientId) || null;
-        if (freshLocal && !isUserAdmin && freshLocal.owner_id !== userId) {
+        if (freshLocal) {
+          if (!isUserAdmin && freshLocal.owner_id !== userId) {
+            onUpdate(null);
+            if (onError) onError(new Error('Access Notice: You do not have permission to view this customer account.'));
+            return;
+          }
+          onUpdate(freshLocal);
+        } else {
           onUpdate(null);
-          if (onError) onError(new Error('Access Notice: You do not have permission to view this customer account.'));
-          return;
+          if (onError) onError(err);
         }
-        onUpdate(freshLocal);
-        if (onError) onError(err);
       }
     );
   } catch (e: any) {
@@ -6352,7 +6374,7 @@ export function subscribeToCompanies(
 
 export async function createCompanyUser(
   companyId: string,
-  input: { full_name: string; email: string; phone?: string; role: 'ADMIN' | 'SALESMAN'; password?: string },
+  input: { full_name: string; email: string; phone?: string; role?: 'ADMIN' | 'SALESMAN'; password?: string },
   actor?: UserProfile
 ): Promise<UserProfile> {
   const actorId = actor?.id || getEffectiveUserId();
@@ -6363,11 +6385,17 @@ export async function createCompanyUser(
     throw new Error('Unauthorized: Only Administrators can create team members.');
   }
 
+  // For Company Admin, strictly enforce their own company and strictly SALESMAN role
+  let targetCompanyId = companyId;
+  let targetRole: UserRole = 'SALESMAN';
+
   if (actorRole === 'ADMIN') {
     const actorCompany = actor?.company_id || getEffectiveCompanyId();
-    if (actorCompany !== companyId) {
-      throw new Error('Unauthorized: Company Admins can only create users for their own company.');
-    }
+    targetCompanyId = actorCompany || DEFAULT_COMPANY_ID;
+    // Company Admin CANNOT create SUPER_ADMIN or another ADMIN
+    targetRole = 'SALESMAN';
+  } else if (actorRole === 'SUPER_ADMIN') {
+    targetRole = input.role === 'ADMIN' ? 'ADMIN' : 'SALESMAN';
   }
 
   const cleanEmail = input.email.trim().toLowerCase();
@@ -6391,8 +6419,8 @@ export async function createCompanyUser(
     id: userId,
     full_name: cleanName,
     email: cleanEmail,
-    role: input.role,
-    company_id: companyId,
+    role: targetRole,
+    company_id: targetCompanyId,
     phone: input.phone || '',
     is_active: true,
     created_at: now,
@@ -6405,6 +6433,10 @@ export async function createCompanyUser(
   localUsers = localUsers.filter((u) => u.email.toLowerCase() !== cleanEmail && u.id !== userId);
   localUsers.push(newUser);
   localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(localUsers));
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('crm_users_changed'));
+  }
 
   // Firestore save
   try {
@@ -6420,22 +6452,202 @@ export async function createCompanyUser(
       action: 'user_created',
       entity_type: 'User',
       entity_id: userId,
+      company_id: targetCompanyId,
       performed_by: actorId,
       performed_by_name: actorName,
       performed_by_role: actorRole as any,
       target_user_id: userId,
       target_user_name: cleanName,
-      description: `${actorRole === 'SUPER_ADMIN' ? 'Super Administrator' : 'Company Administrator'} ${actorName} created ${input.role} account for ${cleanName} (${cleanEmail}).`,
+      description: `${actorRole === 'SUPER_ADMIN' ? 'Super Administrator' : 'Company Administrator'} ${actorName} created ${targetRole} account for ${cleanName} (${cleanEmail}).`,
       metadata: {
-        company_id: companyId,
+        company_id: targetCompanyId,
         user_id: userId,
-        role: input.role,
+        role: targetRole,
         email: cleanEmail,
       },
     });
   } catch (e) {}
 
   return newUser;
+}
+
+export async function updateCompanySalesman(
+  companyId: string,
+  userId: string,
+  input: { full_name?: string; phone?: string },
+  actor?: UserProfile
+): Promise<UserProfile> {
+  const actorId = actor?.id || getEffectiveUserId();
+  const actorName = actor?.full_name || getEffectiveUserName();
+  const actorRole = actor?.role || getEffectiveUserRole();
+  const actorCompany = actor?.company_id || getEffectiveCompanyId();
+
+  if (actorRole !== 'SUPER_ADMIN' && actorRole !== 'ADMIN') {
+    throw new Error('Unauthorized: Only Administrators can edit team members.');
+  }
+
+  if (actorRole === 'ADMIN' && actorCompany !== companyId) {
+    throw new Error('Unauthorized: Company Admins can only edit team members belonging to their own company.');
+  }
+
+  // Fetch current user
+  const current = await getUserProfile(userId);
+  if (!current) {
+    throw new Error('User not found.');
+  }
+
+  if (actorRole === 'ADMIN' && current.company_id && current.company_id !== companyId) {
+    throw new Error('Unauthorized: Cannot edit users belonging to another company.');
+  }
+
+  if (actorRole === 'ADMIN' && (current.role === 'SUPER_ADMIN' || (current.role === 'ADMIN' && current.id !== actorId))) {
+    throw new Error('Unauthorized: Company Admins can only manage Salesmen.');
+  }
+
+  const now = new Date().toISOString();
+  const updatedProfile: UserProfile = {
+    ...current,
+    full_name: input.full_name?.trim() || current.full_name,
+    phone: input.phone !== undefined ? input.phone.trim() : current.phone,
+    // Never allow changing company_id or role through this method
+    company_id: current.company_id || companyId,
+    role: current.role,
+    updated_at: now,
+  };
+
+  // Update local storage
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
+      let users: UserProfile[] = raw ? JSON.parse(raw) : [];
+      users = users.map((u) => (u.id === userId ? updatedProfile : u));
+      localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(users));
+      window.dispatchEvent(new CustomEvent('crm_users_changed'));
+    } catch (e) {}
+  }
+
+  // Update Firestore
+  try {
+    const userDocRef = doc(db, 'users', userId);
+    await updateDoc(userDocRef, {
+      full_name: updatedProfile.full_name,
+      phone: updatedProfile.phone,
+      updated_at: now,
+    });
+  } catch (err) {
+    console.warn('Firestore updateCompanySalesman fallback:', err);
+  }
+
+  // Record audit log
+  try {
+    await createAuditLog({
+      action: 'user_edited',
+      entity_type: 'User',
+      entity_id: userId,
+      company_id: companyId,
+      performed_by: actorId,
+      performed_by_name: actorName,
+      performed_by_role: actorRole as any,
+      target_user_id: userId,
+      target_user_name: updatedProfile.full_name,
+      description: `Company Administrator ${actorName} updated profile details for ${updatedProfile.full_name}.`,
+      metadata: {
+        company_id: companyId,
+        user_id: userId,
+        updated_fields: input,
+      },
+    });
+  } catch (e) {}
+
+  return updatedProfile;
+}
+
+export async function toggleCompanySalesmanStatus(
+  companyId: string,
+  userId: string,
+  isActive: boolean,
+  actor?: UserProfile
+): Promise<void> {
+  const actorId = actor?.id || getEffectiveUserId();
+  const actorName = actor?.full_name || getEffectiveUserName();
+  const actorRole = actor?.role || getEffectiveUserRole();
+  const actorCompany = actor?.company_id || getEffectiveCompanyId();
+
+  if (actorRole !== 'SUPER_ADMIN' && actorRole !== 'ADMIN') {
+    throw new Error('Unauthorized: Only Administrators can activate or deactivate team members.');
+  }
+
+  if (actorRole === 'ADMIN' && actorCompany !== companyId) {
+    throw new Error('Unauthorized: Company Admins can only change status of team members in their own company.');
+  }
+
+  const current = await getUserProfile(userId);
+  if (!current) {
+    throw new Error('User not found.');
+  }
+
+  if (actorRole === 'ADMIN' && current.company_id && current.company_id !== companyId) {
+    throw new Error('Unauthorized: Cannot modify users belonging to another company.');
+  }
+
+  if (current.id === actorId) {
+    throw new Error('Action not permitted: You cannot deactivate your own administrative account.');
+  }
+
+  if (actorRole === 'ADMIN' && (current.role === 'SUPER_ADMIN' || current.role === 'ADMIN')) {
+    throw new Error('Unauthorized: Company Admins can only activate or deactivate Salesmen.');
+  }
+
+  const now = new Date().toISOString();
+
+  // Update local storage
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
+      let users: UserProfile[] = raw ? JSON.parse(raw) : [];
+      const foundIdx = users.findIndex((u) => u.id === userId);
+      if (foundIdx >= 0) {
+        users[foundIdx] = { ...users[foundIdx], is_active: isActive, updated_at: now };
+      } else {
+        users.push({ ...current, is_active: isActive, updated_at: now });
+      }
+      localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(users));
+      window.dispatchEvent(new CustomEvent('crm_users_changed'));
+    } catch (e) {}
+  }
+
+  // Update Firestore
+  try {
+    const userDocRef = doc(db, 'users', userId);
+    await updateDoc(userDocRef, {
+      is_active: isActive,
+      updated_at: now,
+    });
+  } catch (err) {
+    console.warn('Firestore toggleCompanySalesmanStatus fallback:', err);
+  }
+
+  // Record audit log
+  try {
+    await createAuditLog({
+      action: isActive ? 'user_activated' : 'user_deactivated',
+      entity_type: 'User',
+      entity_id: userId,
+      company_id: companyId,
+      performed_by: actorId,
+      performed_by_name: actorName,
+      performed_by_role: actorRole as any,
+      target_user_id: userId,
+      target_user_name: current.full_name,
+      description: `Company Administrator ${actorName} ${isActive ? 'activated' : 'deactivated'} access account for Salesman ${current.full_name}.`,
+      metadata: {
+        company_id: companyId,
+        user_id: userId,
+        previous_status: current.is_active ? 'ACTIVE' : 'INACTIVE',
+        new_status: isActive ? 'ACTIVE' : 'INACTIVE',
+      },
+    });
+  } catch (e) {}
 }
 
 export async function getCompanyUsers(companyId: string): Promise<UserProfile[]> {

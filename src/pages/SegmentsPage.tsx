@@ -536,14 +536,14 @@ export const SegmentsPage: React.FC<SegmentsPageProps> = ({
       </div>
 
       {/* 1-Click Saved Segments Shelf */}
-      <div id="saved-segments-shelf" className="bg-slate-50/80 border border-slate-200 rounded-xl p-4">
+      <div id="saved-segments-shelf" className="bg-[var(--bg-elevated)] border border-[var(--border-subtle)] rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <Bookmark className="w-4 h-4 text-indigo-600" />
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+            <Bookmark className="w-4 h-4 text-[var(--color-primary)]" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text-main)]">
               Saved Segment Presets
             </h2>
-            <span className="text-[11px] text-slate-500">
+            <span className="text-[11px] text-[var(--text-secondary)] font-medium">
               (Live dynamic counts based on your authorized portfolio)
             </span>
           </div>
@@ -551,7 +551,7 @@ export const SegmentsPage: React.FC<SegmentsPageProps> = ({
             <button
               type="button"
               onClick={handleResetFilters}
-              className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+              className="text-xs text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] font-bold cursor-pointer"
             >
               Clear Active Preset
             </button>
@@ -559,7 +559,7 @@ export const SegmentsPage: React.FC<SegmentsPageProps> = ({
         </div>
 
         {savedSegments.length === 0 ? (
-          <p className="text-xs text-slate-400 italic">
+          <p className="text-xs text-[var(--text-muted)] italic">
             No saved segments created yet. {isAdmin && 'Configure filters below and click "Save Filter as Segment".'}
           </p>
         ) : (
@@ -574,29 +574,29 @@ export const SegmentsPage: React.FC<SegmentsPageProps> = ({
                   onClick={() => handleApplySavedSegment(seg)}
                   className={`group relative p-3 rounded-lg border text-left cursor-pointer transition-all ${
                     isCurrent
-                      ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500/20'
-                      : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-xs'
+                      ? 'bg-[var(--color-primary-subtle)] border-[var(--color-primary)] ring-2 ring-[var(--focus-ring)]'
+                      : 'bg-[var(--bg-card)] border-[var(--border-subtle)] hover:border-[var(--border-strong)] hover:shadow-xs'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold text-slate-900 truncate">
+                        <span className="text-xs font-bold text-[var(--text-main)] truncate">
                           {seg.name}
                         </span>
-                        <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                        <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-[var(--bg-hover)] text-[var(--text-secondary)] border border-[var(--border-subtle)]">
                           {seg.entity_type}
                         </span>
                       </div>
                       {seg.description && (
-                        <p className="text-[11px] text-slate-500 truncate mt-0.5">{seg.description}</p>
+                        <p className="text-[11px] text-[var(--text-secondary)] font-medium truncate mt-0.5">{seg.description}</p>
                       )}
                     </div>
                     <span
-                      className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                      className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
                         isCurrent
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-100 text-slate-700 group-hover:bg-indigo-50 group-hover:text-indigo-700'
+                          ? 'bg-[var(--color-primary)] text-white shadow-xs'
+                          : 'bg-[var(--bg-hover)] text-[var(--text-main)] border border-[var(--border-subtle)] group-hover:border-[var(--color-primary-border)]'
                       }`}
                     >
                       {count}
@@ -609,13 +609,13 @@ export const SegmentsPage: React.FC<SegmentsPageProps> = ({
                       {seg.filter_definition.tags.slice(0, 2).map((t) => (
                         <span
                           key={t}
-                          className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded border border-slate-200 truncate max-w-[100px]"
+                          className="text-[10px] px-1.5 py-0.5 bg-[var(--bg-hover)] text-[var(--text-secondary)] rounded border border-[var(--border-subtle)] font-medium truncate max-w-[100px]"
                         >
                           #{t}
                         </span>
                       ))}
                       {seg.filter_definition.tags.length > 2 && (
-                        <span className="text-[10px] text-slate-400">
+                        <span className="text-[10px] text-[var(--text-muted)] font-medium">
                           +{seg.filter_definition.tags.length - 2}
                         </span>
                       )}
@@ -624,11 +624,11 @@ export const SegmentsPage: React.FC<SegmentsPageProps> = ({
 
                   {/* Admin controls */}
                   {isAdmin && (
-                    <div className="absolute top-2 right-2 hidden group-hover:flex items-center gap-1 bg-white/95 rounded-md px-1 py-0.5 shadow-xs border border-slate-200">
+                    <div className="absolute top-2 right-2 hidden group-hover:flex items-center gap-1 bg-[var(--bg-card)] rounded-md px-1 py-0.5 shadow-xs border border-[var(--border-subtle)]">
                       <button
                         type="button"
                         onClick={(e) => handleOpenEditSegmentModal(seg, e)}
-                        className="p-1 text-slate-500 hover:text-indigo-600"
+                        className="p-1 text-[var(--text-secondary)] hover:text-[var(--color-primary)] cursor-pointer"
                         title="Edit segment"
                       >
                         <Edit2 className="w-3 h-3" />
@@ -636,7 +636,7 @@ export const SegmentsPage: React.FC<SegmentsPageProps> = ({
                       <button
                         type="button"
                         onClick={(e) => handleDeleteSavedSegment(seg.id, e)}
-                        className="p-1 text-slate-500 hover:text-rose-600"
+                        className="p-1 text-[var(--text-secondary)] hover:text-rose-500 cursor-pointer"
                         title="Delete segment"
                       >
                         <Trash2 className="w-3 h-3" />

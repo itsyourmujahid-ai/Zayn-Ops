@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Search, Palette, Check, LogOut, ShieldCheck, ChevronDown } from 'lucide-react';
+import { Plus, Search, Palette, Check, LogOut, ShieldCheck, ShieldAlert, ChevronDown, Menu } from 'lucide-react';
 import { NavigationView } from '../../types/crm';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme, ZaynOsThemeId } from '../../context/ThemeContext';
@@ -12,6 +12,7 @@ interface TopHeaderProps {
   onSelectView: (view: NavigationView) => void;
   onSelectLead?: (leadId: string) => void;
   onOpenSearch?: () => void;
+  onToggleMobileMenu?: () => void;
 }
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
@@ -20,8 +21,9 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onSelectView,
   onSelectLead,
   onOpenSearch,
+  onToggleMobileMenu,
 }) => {
-  const { userProfile, signOut } = useAuth();
+  const { userProfile, signOut, isSuperAdmin } = useAuth();
   const { theme, setTheme, availableThemes, themeConfig } = useTheme();
   const [showProfileMenu, setShowProfileMenu] = useState<boolean>(false);
   const [showThemeMenu, setShowThemeMenu] = useState<boolean>(false);
@@ -71,6 +73,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         return 'Import, Export & Bulk Ops';
       case 'settings':
         return 'ZaynOs CRM Settings';
+      case 'super-admin':
+        return 'SaaS Super Admin Console';
       case 'search':
         return 'Unified Search Engine';
       default:
@@ -92,7 +96,21 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       id="top-header"
       className="sticky top-0 z-30 flex h-[72px] w-full items-center justify-between border-b border-[var(--border-color)] bg-[var(--bg-card)] px-4 sm:px-8 shadow-xs transition-colors duration-200"
     >
-      <div className="flex items-center gap-4 flex-1 max-w-xl">
+      <div className="flex items-center gap-3 sm:gap-4 flex-1 max-w-xl">
+        {/* Mobile Navigation Drawer Button */}
+        {onToggleMobileMenu && (
+          <button
+            id="mobile-nav-toggle-btn"
+            type="button"
+            onClick={onToggleMobileMenu}
+            className="md:hidden flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition cursor-pointer shrink-0"
+            title="Open Navigation Menu"
+            aria-label="Open Navigation Menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        )}
+
         {/* Global Search trigger */}
         <div
           onClick={onOpenSearch}
@@ -108,7 +126,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         {/* Mobile Page Title with Brand Mark */}
         <div className="sm:hidden flex items-center gap-2">
           <ZaynLogo size={28} rounded="rounded-md" className="shadow-2xs border border-[var(--border-color)]" />
-          <h1 className="text-sm font-bold text-[var(--text-main)] truncate max-w-[170px]">
+          <h1 className="text-sm font-bold text-[var(--text-main)] truncate max-w-[150px]">
             {getPageTitle(currentView)}
           </h1>
         </div>
@@ -309,6 +327,20 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   >
                     <ShieldCheck className="h-3.5 w-3.5" />
                     <span>Security Audit Logs</span>
+                  </button>
+                )}
+                {isSuperAdmin && (
+                  <button
+                    type="button"
+                    id="profile-menu-superadmin-btn"
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      onSelectView('super-admin');
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-[var(--color-primary)] hover:bg-[var(--bg-hover)] transition cursor-pointer"
+                  >
+                    <ShieldAlert className="h-3.5 w-3.5" />
+                    <span>Super Admin Console</span>
                   </button>
                 )}
                 <div className="my-1 border-t border-[var(--border-color)]" />

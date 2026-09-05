@@ -49,6 +49,7 @@ import {
 } from '../types/database';
 import {
   subscribeToSingleClient,
+  getLocalClients,
   getAllUsers,
   getUserDisplayName,
   updateClient,
@@ -169,15 +170,30 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
     setLoading(true);
     setError(null);
 
+    const currentUserId = userProfile?.id || currentUser?.uid;
+
     const unsub = subscribeToSingleClient(
       clientId,
       (clientData) => {
-        setClient(clientData);
+        if (clientData) {
+          setClient(clientData);
+          setError(null);
+        } else {
+          // Check local cache fallback
+          const localMatch = getLocalClients().find((c) => c.id === clientId);
+          if (localMatch) {
+            setClient(localMatch);
+            setError(null);
+          } else {
+            setClient(null);
+            setError('Client not found or you do not have permission to view this customer.');
+          }
+        }
         setLoading(false);
 
         // Fetch source lead if available
         if (clientData?.source_lead_id) {
-          getLeadById(clientData.source_lead_id)
+          getLeadById(clientData.source_lead_id, userProfile?.role)
             .then((lead) => {
               setSourceLead(lead);
             })
@@ -187,14 +203,22 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
         }
       },
       (err) => {
-        console.error('Error fetching client details:', err);
-        setError('Client not found or you do not have permission to view this customer.');
+        console.warn('Client subscription notice:', err);
+        const localMatch = getLocalClients().find((c) => c.id === clientId);
+        if (localMatch) {
+          setClient(localMatch);
+          setError(null);
+        } else {
+          setError('Client not found or you do not have permission to view this customer.');
+        }
         setLoading(false);
-      }
+      },
+      userProfile?.role,
+      currentUserId
     );
 
     return () => unsub();
-  }, [clientId]);
+  }, [clientId, userProfile?.role, userProfile?.id, currentUser?.uid]);
 
   // Check access permissions
   const hasAccess = useMemo(() => {

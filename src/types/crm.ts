@@ -128,6 +128,7 @@ export type NavigationView =
   | 'pipeline'
   | 'followups'
   | 'reports'
+  | 'team'
   | 'notifications'
   | 'audit'
   | 'data-quality'

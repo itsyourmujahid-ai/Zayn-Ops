@@ -86,12 +86,12 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
       onDrop={handleDrop}
       className={`flex w-76 shrink-0 flex-col rounded-2xl border transition-colors duration-150 ${
         isDragOver
-          ? 'border-indigo-400 bg-indigo-50/50 ring-2 ring-indigo-300 ring-offset-1'
-          : 'border-slate-200/90 bg-slate-100/70'
+          ? 'border-[var(--color-primary)] bg-[var(--bg-hover)] ring-2 ring-[var(--focus-ring)] ring-offset-1'
+          : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)]'
       }`}
     >
       {/* Stage Header */}
-      <div className={`p-3.5 rounded-t-2xl border-b border-slate-200/80 ${stage.headerBg}`}>
+      <div className={`p-3.5 rounded-t-2xl border-b border-[var(--border-subtle)] bg-[var(--bg-card)]/70`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Badge stage={stage.id.toLowerCase() as any} size="sm">
@@ -100,16 +100,16 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
           </div>
           <span
             id={`count-stage-${stage.id.toLowerCase()}`}
-            className="rounded-full bg-white px-2 py-0.5 text-xs font-bold text-slate-700 shadow-xs border border-slate-200"
+            className="rounded-full bg-[var(--bg-elevated)] px-2.5 py-0.5 text-xs font-bold text-[var(--text-main)] shadow-xs border border-[var(--border-strong)]"
           >
             {leads.length}
           </span>
         </div>
 
-        <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
-          <span className="truncate">{stage.description}</span>
+        <div className="mt-1 flex items-center justify-between text-[11px] text-[var(--text-secondary)]">
+          <span className="truncate font-medium">{stage.description}</span>
           {totalValue > 0 && (
-            <span className="font-semibold text-slate-700 shrink-0">
+            <span className="font-bold text-[var(--text-main)] shrink-0">
               SAR {(totalValue / 1000).toFixed(0)}k
             </span>
           )}
@@ -119,12 +119,12 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
       {/* Cards Scrollable Body */}
       <div className="flex-1 p-3 space-y-3 min-h-[400px] overflow-y-auto max-h-[calc(100vh-290px)]">
         {leads.length === 0 ? (
-          <div className="flex h-48 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300/80 bg-white/50 p-4 text-center">
-            <div className="rounded-full bg-slate-100 p-2 text-slate-400 mb-1.5">
+          <div className="flex h-48 flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-card)]/60 p-4 text-center">
+            <div className="rounded-full bg-[var(--bg-hover)] p-2 text-[var(--text-secondary)] mb-1.5">
               <span className="text-xs">📂</span>
             </div>
-            <p className="text-xs font-medium text-slate-500">No leads in this stage</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">Drag leads here to progress them</p>
+            <p className="text-xs font-semibold text-[var(--text-main)]">No leads in this stage</p>
+            <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">Drag leads here to progress them</p>
           </div>
         ) : (
           leads.map((lead) => (

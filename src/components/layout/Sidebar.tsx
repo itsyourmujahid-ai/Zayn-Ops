@@ -20,6 +20,8 @@ import {
   Layers,
   Palette,
   ShieldAlert,
+  X,
+  UserCheck,
 } from 'lucide-react';
 import { NavigationView } from '../../types/crm';
 import { useAuth } from '../../context/AuthContext';
@@ -41,6 +43,8 @@ interface SidebarProps {
   currentView: NavigationView;
   onSelectView: (view: NavigationView) => void;
   onOpenAddLead: () => void;
+  isMobileDrawer?: boolean;
+  onCloseDrawer?: () => void;
 }
 
 interface NavItem {
@@ -59,6 +63,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentView,
   onSelectView,
   onOpenAddLead,
+  isMobileDrawer,
+  onCloseDrawer,
 }) => {
   const { currentUser, userProfile, isSuperAdmin, currentCompany, signOut } = useAuth();
   const { themeConfig } = useTheme();
@@ -139,8 +145,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ...(userProfile?.role === 'ADMIN' || isSuperAdmin
       ? [
           {
-            title: 'Enterprise Governance',
+            title: 'Company Administration',
             items: [
+              {
+                id: 'team' as NavigationView,
+                label: 'Team',
+                icon: UserCheck,
+              },
               {
                 id: 'data-quality' as NavigationView,
                 label: 'Data Quality',
@@ -183,8 +194,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside
-      id="main-sidebar"
-      className="hidden w-64 flex-col border-r border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-main)] md:flex md:h-screen md:sticky md:top-0 shadow-md transition-colors duration-200 z-20"
+      id={isMobileDrawer ? 'mobile-sidebar-drawer' : 'main-sidebar'}
+      className={
+        isMobileDrawer
+          ? 'flex h-full w-full flex-col bg-[var(--bg-card)] text-[var(--text-main)] overflow-hidden z-50'
+          : 'hidden w-64 flex-col border-r border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-main)] md:flex md:h-screen md:sticky md:top-0 shadow-md transition-colors duration-200 z-20'
+      }
     >
       {/* ZaynOs App Branding */}
       <div className="flex h-[72px] items-center justify-between border-b border-[var(--border-color)] px-5">
@@ -212,6 +227,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Close Drawer Button for Mobile */}
+        {isMobileDrawer && onCloseDrawer && (
+          <button
+            id="close-mobile-drawer-btn"
+            type="button"
+            onClick={onCloseDrawer}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition cursor-pointer"
+            title="Close menu"
+            aria-label="Close menu"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       {/* Primary CTA: + Add Lead */}
@@ -219,7 +248,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <button
           id="sidebar-add-lead-btn"
           type="button"
-          onClick={onOpenAddLead}
+          onClick={() => {
+            onOpenAddLead();
+            if (isMobileDrawer && onCloseDrawer) onCloseDrawer();
+          }}
           className="zaynos-btn-primary w-full text-xs uppercase tracking-wider py-2.5 shadow-sm active:scale-98"
         >
           <Plus className="h-4 w-4" />
@@ -231,7 +263,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <nav className="flex-1 space-y-4 px-3 py-2 overflow-y-auto">
         {navSections.map((section) => (
           <div key={section.title} className="space-y-1">
-            <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] opacity-70">
+            <div className="px-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
               {section.title}
             </div>
             {section.items.map((item) => {
@@ -242,11 +274,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   key={item.id}
                   id={`nav-${item.id}`}
                   type="button"
-                  onClick={() => onSelectView(item.id)}
+                  onClick={() => {
+                    onSelectView(item.id);
+                    if (isMobileDrawer && onCloseDrawer) onCloseDrawer();
+                  }}
                   className={`group flex w-full items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                     isActive
                       ? 'font-semibold shadow-2xs'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-main)] hover:bg-[var(--bg-hover)]'
                   }`}
                   style={
                     isActive
@@ -260,8 +295,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <div className="flex items-center gap-2.5">
                     <Icon
-                      className="h-4 w-4 transition-colors"
-                      style={isActive ? { color: 'var(--color-primary)' } : undefined}
+                      className={`h-4 w-4 transition-colors ${
+                        isActive ? 'text-[var(--color-primary)]' : 'text-[var(--text-muted)] group-hover:text-[var(--text-main)]'
+                      }`}
                     />
                     <span>{item.label}</span>
                   </div>
@@ -289,7 +325,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Active Theme Indicator */}
         <button
           type="button"
-          onClick={() => onSelectView('settings')}
+          onClick={() => {
+            onSelectView('settings');
+            if (isMobileDrawer && onCloseDrawer) onCloseDrawer();
+          }}
           className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-[11px] border border-[var(--border-color)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)] transition cursor-pointer"
           title="Change theme in Appearance settings"
         >
@@ -327,12 +366,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   className="text-[9px] font-bold px-1 py-0.2 rounded uppercase tracking-wider"
                   style={{
                     backgroundColor: 'var(--bg-elevated)',
-                    color: 'var(--text-muted)',
+                    color: 'var(--text-secondary)',
                   }}
                 >
                   {userProfile?.role || 'SALESMAN'}
                 </span>
-                <span className="text-[10px] text-[var(--text-muted)] truncate opacity-80 max-w-[90px]">
+                <span className="text-[10px] text-[var(--text-muted)] truncate max-w-[90px]">
                   {userProfile?.email}
                 </span>
               </div>

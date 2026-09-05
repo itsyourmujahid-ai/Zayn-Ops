@@ -24,7 +24,7 @@ service cloud.firestore {
     // Check if authenticated user is the designated Super Admin
     function isSuperAdmin() {
       return isAuthenticated() && (
-        (request.auth.token.email != null && request.auth.token.email.lower() == 'itsyourmujahid@gmail.com') ||
+        (('email' in request.auth.token) && request.auth.token.email != null && request.auth.token.email.lower() == 'itsyourmujahid@gmail.com') ||
         (userDocExists() && getUserData().role == 'SUPER_ADMIN')
       );
     }
@@ -144,11 +144,15 @@ service cloud.firestore {
       
       // Creating user profiles:
       // - Super Admin can create any profile
-      // - Company Admin can create profiles for their own company
+      // - Company Admin can create SALESMAN profiles strictly for their own company
       // - User can create their own profile on signup
       allow create: if isAuthenticated() && (
         isSuperAdmin() ||
-        (isAdmin() && (!('company_id' in request.resource.data) || request.resource.data.company_id == getUserCompanyId())) ||
+        (
+          isAdmin() && 
+          request.resource.data.company_id == getUserCompanyId() && 
+          request.resource.data.role == 'SALESMAN'
+        ) ||
         (
           request.auth.uid == userId && (
             request.resource.data.role != 'SUPER_ADMIN' ||
@@ -159,14 +163,16 @@ service cloud.firestore {
       
       // Update profile:
       // - Super Admin can update any profile
-      // - Company Admin can update profiles in their own company (except Super Admin)
+      // - Company Admin can update profiles in their own company (cannot create Super Admin or change company_id)
       // - Users can update their own basic profile info
       allow update: if isAuthenticated() && (
         isSuperAdmin() ||
         (
           isAdmin() &&
           belongsToCompany(resource.data) &&
-          resource.data.role != 'SUPER_ADMIN'
+          resource.data.role != 'SUPER_ADMIN' &&
+          request.resource.data.role != 'SUPER_ADMIN' &&
+          (!('company_id' in request.resource.data) || request.resource.data.company_id == resource.data.company_id)
         ) ||
         (
           request.auth.uid == userId &&
@@ -380,10 +386,7 @@ service cloud.firestore {
     // 9. Clients Collection (/clients/{clientId})
     // ==========================================
     match /clients/{clientId} {
-      allow read: if isAuthenticated() && belongsToCompany(resource.data) && (
-        isAdmin() ||
-        resource.data.owner_id == request.auth.uid
-      );
+      allow read: if isAuthenticated() && belongsToCompany(resource.data);
 
       allow create: if isAuthenticated() && isActive() && belongsToCompany(request.resource.data) &&
                     request.resource.data.company_name is string &&
