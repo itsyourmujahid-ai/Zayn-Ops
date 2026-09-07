@@ -18,7 +18,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useTheme, ZaynOsThemeId } from '../context/ThemeContext';
+import { useTheme, ZaynOpsThemeId } from '../context/ThemeContext';
 import { UserProfile, UserRole } from '../types/database';
 import { getAllUsers, updateUserRole, updateUserStatus } from '../lib/dal';
 import { TagManagementSection } from '../components/TagManagementSection';
@@ -125,7 +125,7 @@ export const SettingsPage: React.FC = () => {
       )}
 
       <div className="space-y-4">
-        {/* Section: Appearance (ZaynOs Theme Switcher) */}
+        {/* Section: Appearance (ZaynOps Theme Switcher) */}
         <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-5 shadow-xs" id="appearance-section">
           <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-3">
             <div className="flex items-center gap-3">
@@ -140,10 +140,10 @@ export const SettingsPage: React.FC = () => {
               </div>
               <div>
                 <h3 className="text-sm font-bold text-[var(--text-main)]">
-                  Appearance &amp; ZaynOs Theme Engine
+                  Appearance &amp; ZaynOps Theme Engine
                 </h3>
                 <p className="text-xs text-[var(--text-muted)]">
-                  Select your personal ZaynOs visual environment. Changes apply instantly and persist across all sessions.
+                  Select your personal ZaynOps visual environment. Changes apply instantly and persist across all sessions.
                 </p>
               </div>
             </div>
@@ -191,7 +191,7 @@ export const SettingsPage: React.FC = () => {
                       <div className="flex items-center justify-between pb-1.5 border-b" style={{ borderColor: t.borderColor }}>
                         <div className="flex items-center gap-1.5">
                           <div className="h-3 w-3 rounded" style={{ backgroundColor: t.colorPrimary }} />
-                          <span className="text-[10px] font-bold" style={{ color: t.textMain }}>ZaynOs</span>
+                          <span className="text-[10px] font-bold" style={{ color: t.textMain }}>ZaynOps</span>
                         </div>
                         <span className="text-[9px] px-1 py-0.2 rounded" style={{ backgroundColor: t.bgCard, color: t.textMuted }}>
                           {t.style.split(' ')[0]}
@@ -476,10 +476,10 @@ export const SettingsPage: React.FC = () => {
         {/* Section 3: App & Brand Identity */}
         <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-5 shadow-xs">
           <div className="flex items-center gap-3 border-b border-[var(--border-subtle)] pb-3">
-            <ZaynLogo size={40} rounded="rounded-xl" className="shadow-xs border border-[var(--border-color)]" />
+            <ZaynLogo size={40} className="shrink-0 drop-shadow-xs" />
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-[var(--text-main)]">ZaynOs Enterprise CRM</h3>
+                <h3 className="text-sm font-bold text-[var(--text-main)]">ZaynOps Enterprise CRM</h3>
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider bg-[var(--color-primary-subtle)] text-[var(--color-primary)] border border-[var(--color-primary-border)]">
                   Official Brand
                 </span>

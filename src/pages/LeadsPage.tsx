@@ -21,6 +21,8 @@ import {
   ChevronRight,
   Clock,
   ExternalLink,
+  Download,
+  ArrowUpDown,
 } from 'lucide-react';
 import { Badge } from '../components/common/Badge';
 import { BulkActionToolbar } from '../components/common/BulkActionToolbar';
@@ -43,7 +45,10 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
   initialPriority,
   initialSalesman,
 }) => {
-  const { userProfile, currentUser, isAdmin } = useAuth();
+  const { userProfile, currentUser, isAdmin, hasPermission } = useAuth();
+  const canCreateLead = isAdmin || hasPermission('LEADS_CREATE');
+  const canExportData = isAdmin || hasPermission('EXPORT_DATA');
+
   const [leads, setLeads] = useState<LeadRecord[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -58,6 +63,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
   const [selectedLeadType, setSelectedLeadType] = useState('all');
   const [selectedLocation, setSelectedLocation] = useState('all');
   const [selectedSalesman, setSelectedSalesman] = useState(initialSalesman || 'all');
+  const [sortBy, setSortBy] = useState<'updated_at' | 'created_at' | 'company_name' | 'priority'>('updated_at');
 
   useEffect(() => {
     if (initialStage) setSelectedStage(initialStage);
@@ -219,6 +225,19 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
       }
 
       return true;
+    }).sort((a, b) => {
+      if (sortBy === 'created_at') {
+        return new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime();
+      }
+      if (sortBy === 'company_name') {
+        return (a.company_name || '').localeCompare(b.company_name || '');
+      }
+      if (sortBy === 'priority') {
+        const pOrder: Record<string, number> = { Hot: 3, Warm: 2, Cold: 1 };
+        return (pOrder[b.priority] || 0) - (pOrder[a.priority] || 0);
+      }
+      // default: updated_at desc
+      return new Date(b.updated_at || b.created_at || '').getTime() - new Date(a.updated_at || a.created_at || '').getTime();
     });
   }, [
     leads,
@@ -228,9 +247,35 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
     selectedLeadType,
     selectedLocation,
     selectedSalesman,
+    sortBy,
     isAdmin,
     allUsers,
   ]);
+
+  const handleExportCSV = () => {
+    if (!filteredLeads.length) return;
+    const headers = ['Company Name', 'Contact Person', 'Email', 'Phone', 'Stage', 'Priority', 'Lead Type', 'Location', 'Value (OMR)', 'Created At'];
+    const rows = filteredLeads.map((l) => [
+      `"${(l.company_name || '').replace(/"/g, '""')}"`,
+      `"${(l.contact_person || '').replace(/"/g, '""')}"`,
+      `"${(l.email || '').replace(/"/g, '""')}"`,
+      `"${(l.phone || '').replace(/"/g, '""')}"`,
+      `"${l.status || ''}"`,
+      `"${l.priority || ''}"`,
+      `"${l.lead_type || ''}"`,
+      `"${(l.location || '').replace(/"/g, '""')}"`,
+      `"${l.deal_value || (l as any).value || 0}"`,
+      `"${l.created_at || ''}"`,
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `leads_export_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const salesmenUsers = allUsers.filter(
     (u) => u.role === 'SALESMAN' || u.role === 'sales_rep'
@@ -310,15 +355,31 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
                 }).`}
           </p>
         </div>
-        <button
-          id="btn-add-lead-top"
-          type="button"
-          onClick={onOpenAddLead}
-          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs sm:text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition self-start sm:self-auto cursor-pointer shrink-0"
-        >
-          <Plus className="h-4 w-4" />
-          <span>+ Add Lead</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          {canExportData && (
+            <button
+              id="btn-export-leads-csv"
+              type="button"
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer shadow-2xs shrink-0"
+              title="Export filtered leads to CSV spreadsheet"
+            >
+              <Download className="h-4 w-4 text-slate-500" />
+              <span>Export CSV</span>
+            </button>
+          )}
+          {canCreateLead && (
+            <button
+              id="btn-add-lead-top"
+              type="button"
+              onClick={onOpenAddLead}
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs sm:text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition cursor-pointer shrink-0"
+            >
+              <Plus className="h-4 w-4" />
+              <span>+ Add Lead</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Selected Lead Route Notice Banner */}
@@ -449,6 +510,26 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
                 ))}
               </select>
             )}
+
+            {/* Sort Dropdown */}
+            <div className="flex items-center gap-1.5 ml-auto">
+              <span className="text-xs text-slate-400 flex items-center gap-1">
+                <ArrowUpDown className="h-3 w-3" />
+                <span className="hidden sm:inline">Sort:</span>
+              </span>
+              <select
+                id="filter-sort-select"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="rounded-lg border border-slate-300 py-1.5 px-2.5 text-xs focus:border-indigo-600 focus:outline-none bg-white text-slate-700 font-medium cursor-pointer"
+                title="Sort leads list"
+              >
+                <option value="updated_at">Recently Updated</option>
+                <option value="created_at">Recently Created</option>
+                <option value="company_name">Company Name (A-Z)</option>
+                <option value="priority">Priority (Hot first)</option>
+              </select>
+            </div>
 
             {/* Clear / Reset Filters Button */}
             {hasActiveFilters && (

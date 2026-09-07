@@ -115,7 +115,7 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
   onBack,
   onNavigateToClient,
 }) => {
-  const { userProfile, currentUser, isAdmin, isSuperAdmin } = useAuth();
+  const { userProfile, currentUser, isAdmin, isSuperAdmin, hasPermission } = useAuth();
 
   const [lead, setLead] = useState<LeadRecord | null>(null);
   const [activities, setActivities] = useState<LeadActivityRecord[]>([]);
@@ -562,10 +562,11 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
             </button>
           ) : null}
 
-          {/* Reassign Button (Admin Only) */}
-          {isAdmin && (
+          {/* Reassign Button (Admin or LEADS_REASSIGN permission) */}
+          {(isAdmin || isSuperAdmin || hasPermission('LEADS_REASSIGN')) && (
             <button
               type="button"
+              id="lead-reassign-btn"
               onClick={() => setIsReassignModalOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition cursor-pointer"
             >
@@ -575,45 +576,52 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
           )}
 
           {/* Schedule Meeting Button */}
-          <button
-            type="button"
-            id="lead-schedule-meeting-btn"
-            onClick={() => {
-              setScheduleFollowUpInitialAction('Meeting');
-              setIsScheduleFollowUpModalOpen(true);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-2xs hover:bg-indigo-100 transition cursor-pointer"
-          >
-            <Calendar className="h-3.5 w-3.5 text-indigo-600" />
-            <span>Meeting</span>
-          </button>
+          {(isAdmin || isSuperAdmin || hasPermission('FOLLOWUPS_CREATE')) && (
+            <button
+              type="button"
+              id="lead-schedule-meeting-btn"
+              onClick={() => {
+                setScheduleFollowUpInitialAction('Meeting');
+                setIsScheduleFollowUpModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-2xs hover:bg-indigo-100 transition cursor-pointer"
+            >
+              <Calendar className="h-3.5 w-3.5 text-indigo-600" />
+              <span>Meeting</span>
+            </button>
+          )}
 
           {/* Schedule Site Visit Button */}
-          <button
-            type="button"
-            id="lead-schedule-visit-btn"
-            onClick={() => {
-              setScheduleFollowUpInitialAction('Site Visit');
-              setIsScheduleFollowUpModalOpen(true);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 shadow-2xs hover:bg-emerald-100 transition cursor-pointer"
-          >
-            <MapPin className="h-3.5 w-3.5 text-emerald-600" />
-            <span>Site Visit</span>
-          </button>
+          {(isAdmin || isSuperAdmin || hasPermission('FOLLOWUPS_CREATE')) && (
+            <button
+              type="button"
+              id="lead-schedule-visit-btn"
+              onClick={() => {
+                setScheduleFollowUpInitialAction('Site Visit');
+                setIsScheduleFollowUpModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 shadow-2xs hover:bg-emerald-100 transition cursor-pointer"
+            >
+              <MapPin className="h-3.5 w-3.5 text-emerald-600" />
+              <span>Site Visit</span>
+            </button>
+          )}
 
           {/* Edit Lead Button */}
-          <button
-            type="button"
-            onClick={() => setIsEditModalOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition cursor-pointer"
-          >
-            <Edit3 className="h-3.5 w-3.5 text-slate-600" />
-            <span>Edit Information</span>
-          </button>
+          {(isAdmin || isSuperAdmin || hasPermission('LEADS_EDIT')) && (
+            <button
+              type="button"
+              id="lead-edit-btn"
+              onClick={() => setIsEditModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition cursor-pointer"
+            >
+              <Edit3 className="h-3.5 w-3.5 text-slate-600" />
+              <span>Edit Information</span>
+            </button>
+          )}
 
-          {/* Admin Delete Lead Button (Phase X) */}
-          {(isAdmin || isSuperAdmin) && (
+          {/* Delete Lead Button (Admin or LEADS_DELETE permission) */}
+          {(isAdmin || isSuperAdmin || hasPermission('LEADS_DELETE')) && (
             <button
               type="button"
               id="lead-delete-btn"
@@ -623,7 +631,7 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
                 setIsDeleteModalOpen(true);
               }}
               className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 shadow-2xs hover:bg-rose-100 transition cursor-pointer"
-              title="Permanently remove this lead (Admin only)"
+              title="Permanently remove this lead"
             >
               <Trash2 className="h-3.5 w-3.5 text-rose-600" />
               <span>Delete Lead</span>
@@ -631,14 +639,17 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
           )}
 
           {/* Primary Log Activity Button */}
-          <button
-            type="button"
-            onClick={() => openLogModal('Call')}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 transition cursor-pointer"
-          >
-            <Plus className="h-4 w-4" />
-            <span>+ Log Activity</span>
-          </button>
+          {(isAdmin || isSuperAdmin || hasPermission('ACTIVITIES_LOG')) && (
+            <button
+              type="button"
+              id="lead-log-activity-btn"
+              onClick={() => openLogModal('Call')}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 transition cursor-pointer"
+            >
+              <Plus className="h-4 w-4" />
+              <span>+ Log Activity</span>
+            </button>
+          )}
         </div>
       </div>
 

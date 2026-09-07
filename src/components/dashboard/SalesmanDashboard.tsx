@@ -28,6 +28,8 @@ import { SalesmanPriorityLeads } from './SalesmanPriorityLeads';
 import { LeadPipelineOverview } from './LeadPipelineOverview';
 import { RecentActivityFeed } from './RecentActivityFeed';
 import { DashboardCalendarWidget } from './DashboardCalendarWidget';
+import { SalesmanPerformanceCard } from './SalesmanPerformanceCard';
+import { useAuth } from '../../context/AuthContext';
 
 interface SalesmanDashboardProps {
   userProfile: UserProfile;
@@ -56,6 +58,10 @@ export const SalesmanDashboard: React.FC<SalesmanDashboardProps> = ({
   onOpenRescheduleFollowUp,
   onSelectView,
 }) => {
+  const { hasPermission, isAdmin } = useAuth();
+  const canCreateLead = isAdmin || hasPermission('LEADS_CREATE');
+  const canCreateFollowUp = isAdmin || hasPermission('FOLLOWUPS_CREATE');
+
   // My Leads Metrics
   const myTotalLeads = leads.length;
   const myNewLeads = leads.filter((l) => l.status === 'New').length;
@@ -103,22 +109,28 @@ export const SalesmanDashboard: React.FC<SalesmanDashboardProps> = ({
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-center">
-          <button
-            type="button"
-            onClick={onOpenAddLead}
-            className="zaynos-btn-primary text-xs font-bold shadow-xs cursor-pointer"
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            <span>Add Lead</span>
-          </button>
-          <button
-            type="button"
-            onClick={onOpenScheduleFollowUp}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 hover:bg-white/20 px-3.5 py-2 text-xs font-bold text-white border border-white/10 transition cursor-pointer"
-          >
-            <Calendar className="h-3.5 w-3.5 text-indigo-300" />
-            <span>Schedule Task</span>
-          </button>
+          {canCreateLead && (
+            <button
+              id="salesman-quick-add-lead-btn"
+              type="button"
+              onClick={onOpenAddLead}
+              className="zaynos-btn-primary text-xs font-bold shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>Add Lead</span>
+            </button>
+          )}
+          {canCreateFollowUp && (
+            <button
+              id="salesman-quick-schedule-task-btn"
+              type="button"
+              onClick={onOpenScheduleFollowUp}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)] px-3.5 py-2 text-xs font-bold text-[var(--text-main)] transition cursor-pointer"
+            >
+              <Calendar className="h-3.5 w-3.5 text-[var(--color-primary)]" />
+              <span>Schedule Task</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -221,6 +233,14 @@ export const SalesmanDashboard: React.FC<SalesmanDashboardProps> = ({
           </span>
         </button>
       </div>
+
+      {/* 1.1 TARGETS & PERFORMANCE METRICS */}
+      <SalesmanPerformanceCard
+        userProfile={userProfile}
+        leads={leads}
+        followups={followups}
+        activities={activities}
+      />
 
       {/* 2. TODAY'S WORK & ACTIONS (PRIMARY FOCUS FOR SALESMAN) */}
       <SalesmanTodayTasks

@@ -11,13 +11,6 @@ export interface PredefinedAccount {
 
 export const PREDEFINED_ACCOUNTS: PredefinedAccount[] = [
   {
-    name: 'Mujahid Islam (Super Admin)',
-    email: 'itsyourmujahid@gmail.com',
-    password: 'bahwanmge',
-    role: 'SUPER_ADMIN',
-    description: 'Platform Super Administrator • Multi-Company SaaS Governance',
-  },
-  {
     name: 'Admin (Bahwan M&E)',
     email: 'admin@bahwanmge.com',
     password: 'bahwanmge',

@@ -21,6 +21,7 @@ import {
   Clock,
   CalendarPlus,
   AlertTriangle,
+  Plus,
 } from 'lucide-react';
 import {
   ClientRecord,
@@ -38,6 +39,7 @@ import {
   subscribeToAllActivities,
 } from '../lib/dal';
 import { BulkActionToolbar } from '../components/common/BulkActionToolbar';
+import { CreateClientModal } from '../components/clients/CreateClientModal';
 import { useAuth } from '../context/AuthContext';
 
 interface ClientsPageProps {
@@ -49,7 +51,9 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
   onSelectClient,
   onNavigateToLead,
 }) => {
-  const { userProfile, currentUser, isAdmin } = useAuth();
+  const { userProfile, currentUser, isAdmin, isSuperAdmin, hasPermission } = useAuth();
+  const canCreateClient = !isSuperAdmin && (isAdmin || hasPermission('CLIENTS_CREATE') || userProfile?.role === 'SALESMAN');
+
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [followups, setFollowups] = useState<FollowUpRecord[]>([]);
@@ -65,6 +69,7 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
   const [needsFollowUpOnly, setNeedsFollowUpOnly] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<'recent' | 'name' | 'status' | 'last_contact'>('recent');
   const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set());
+  const [isCreateClientOpen, setIsCreateClientOpen] = useState<boolean>(false);
 
   // Load team members
   useEffect(() => {
@@ -355,12 +360,28 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
           </p>
         </div>
 
-        {/* Security & Role Scope Indicator */}
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 shadow-2xs self-start sm:self-auto">
-          <ShieldCheck className="h-4 w-4 text-emerald-600" />
-          <span>
-            {isAdmin ? 'All Enterprise Clients (Admin Scope)' : 'My Assigned Customer Portfolio'}
-          </span>
+        {/* Action Controls */}
+        <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+          {/* Security & Role Scope Indicator */}
+          <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 shadow-2xs">
+            <ShieldCheck className="h-4 w-4 text-emerald-600" />
+            <span>
+              {isAdmin ? 'All Enterprise Clients (Admin Scope)' : 'My Assigned Customer Portfolio'}
+            </span>
+          </div>
+
+          {/* Add Client Button */}
+          {canCreateClient && (
+            <button
+              type="button"
+              id="clients-add-new-btn"
+              onClick={() => setIsCreateClientOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition cursor-pointer active:scale-95"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Add Client</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -770,6 +791,15 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
         allTeamUsers={allUsers}
         onClearSelection={() => setSelectedClientIds(new Set())}
         onOperationComplete={() => setSelectedClientIds(new Set())}
+      />
+
+      {/* Create Client Modal */}
+      <CreateClientModal
+        isOpen={isCreateClientOpen}
+        onClose={() => setIsCreateClientOpen(false)}
+        onCreated={(newClient) => {
+          onSelectClient(newClient.id);
+        }}
       />
     </div>
   );

@@ -35,12 +35,16 @@ export const TransferClientModal: React.FC<TransferClientModalProps> = ({
 
       getActiveSalesmen()
         .then((users) => {
-          setSalesmen(users);
-          const other = users.find((u) => u.id !== client.owner_id);
+          // Filter to same company
+          const companyUsers = client.company_id
+            ? users.filter((u) => !u.company_id || u.company_id === client.company_id)
+            : users;
+          setSalesmen(companyUsers);
+          const other = companyUsers.find((u) => u.id !== client.owner_id);
           if (other) {
             setSelectedSalesmanId(other.id);
-          } else if (users.length > 0) {
-            setSelectedSalesmanId(users[0].id);
+          } else if (companyUsers.length > 0) {
+            setSelectedSalesmanId(companyUsers[0].id);
           }
         })
         .catch((err) => {

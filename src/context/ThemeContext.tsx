@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-export type ZaynOsThemeId = 'obsidian-gold' | 'midnight-navy' | 'emerald-noir';
+export type ZaynOpsThemeId = 'obsidian-gold' | 'midnight-navy' | 'emerald-noir';
+export type ZaynOsThemeId = ZaynOpsThemeId;
 
-export interface ZaynOsThemeConfig {
-  id: ZaynOsThemeId;
+export interface ZaynOpsThemeConfig {
+  id: ZaynOpsThemeId;
   name: string;
   style: string;
   tagline: string;
@@ -14,8 +15,9 @@ export interface ZaynOsThemeConfig {
   textMuted: string;
   borderColor: string;
 }
+export type ZaynOsThemeConfig = ZaynOpsThemeConfig;
 
-export const ZAYNOS_THEMES: Record<ZaynOsThemeId, ZaynOsThemeConfig> = {
+export const ZAYNOPS_THEMES: Record<ZaynOpsThemeId, ZaynOpsThemeConfig> = {
   'obsidian-gold': {
     id: 'obsidian-gold',
     name: 'Obsidian & Champagne Gold',
@@ -53,34 +55,37 @@ export const ZAYNOS_THEMES: Record<ZaynOsThemeId, ZaynOsThemeConfig> = {
     borderColor: '#242428',
   },
 };
+export const ZAYNOS_THEMES = ZAYNOPS_THEMES;
 
-const STORAGE_KEY = 'zaynos_theme';
+const STORAGE_KEY = 'zaynops_theme';
+const LEGACY_STORAGE_KEY = 'zaynos_theme';
 
 interface ThemeContextValue {
-  theme: ZaynOsThemeId;
-  themeConfig: ZaynOsThemeConfig;
-  setTheme: (theme: ZaynOsThemeId) => void;
-  availableThemes: ZaynOsThemeConfig[];
+  theme: ZaynOpsThemeId;
+  themeConfig: ZaynOpsThemeConfig;
+  setTheme: (theme: ZaynOpsThemeId) => void;
+  availableThemes: ZaynOpsThemeConfig[];
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [theme, setThemeState] = useState<ZaynOsThemeId>(() => {
+  const [theme, setThemeState] = useState<ZaynOpsThemeId>(() => {
     if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem(STORAGE_KEY) as ZaynOsThemeId;
-      if (stored && ZAYNOS_THEMES[stored]) {
+      const stored = (localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY)) as ZaynOpsThemeId;
+      if (stored && ZAYNOPS_THEMES[stored]) {
         return stored;
       }
     }
     return 'obsidian-gold';
   });
 
-  const setTheme = (newTheme: ZaynOsThemeId) => {
-    if (ZAYNOS_THEMES[newTheme]) {
+  const setTheme = (newTheme: ZaynOpsThemeId) => {
+    if (ZAYNOPS_THEMES[newTheme]) {
       setThemeState(newTheme);
       try {
         localStorage.setItem(STORAGE_KEY, newTheme);
+        localStorage.setItem(LEGACY_STORAGE_KEY, newTheme);
       } catch (e) {
         console.warn('Unable to store theme preference in localStorage:', e);
       }
@@ -100,11 +105,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       metaThemeColor.setAttribute('name', 'theme-color');
       document.head.appendChild(metaThemeColor);
     }
-    metaThemeColor.setAttribute('content', ZAYNOS_THEMES[theme].bgBase);
+    metaThemeColor.setAttribute('content', ZAYNOPS_THEMES[theme].bgBase);
   }, [theme]);
 
-  const themeConfig = ZAYNOS_THEMES[theme];
-  const availableThemes = Object.values(ZAYNOS_THEMES);
+  const themeConfig = ZAYNOPS_THEMES[theme];
+  const availableThemes = Object.values(ZAYNOPS_THEMES);
 
   return (
     <ThemeContext.Provider value={{ theme, themeConfig, setTheme, availableThemes }}>

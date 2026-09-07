@@ -11,11 +11,14 @@ import {
   signInWithPopup,
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import { UserProfile, UserRole, CompanyRecord } from '../types/database';
+import { UserProfile, UserRole, CompanyRecord, SalesmanPermission, hasPermission } from '../types/database';
 import {
   getUserProfile,
   getAllUsers,
   createOrUpdateUserProfile,
+  findUserProfileByEmail,
+  repairCompanyAdminAccounts,
+  normalizeUserRole,
   getCompanyById,
   ensureMultiTenantMigration,
   DEFAULT_COMPANY_ID,
@@ -25,6 +28,7 @@ import { PREDEFINED_ACCOUNTS, PredefinedAccount } from '../lib/predefinedAccount
 
 const ADMIN_BOOTSTRAP_EMAIL = 'itsyourmujahid@gmail.com';
 const LOCAL_STORAGE_SESSION_KEY = 'crm_active_session_v1';
+const VVIP_SESSION_KEY = 'vvip_session_token_v1';
 const VIEW_COMPANY_KEY = 'crm_super_admin_view_company_id';
 
 interface AuthContextType {
@@ -35,6 +39,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isCompanyAdmin: boolean;
   isSalesman: boolean;
+  isCustomer: boolean;
   isActive: boolean;
   currentCompany: CompanyRecord | null;
   companyId: string;
@@ -46,6 +51,8 @@ interface AuthContextType {
   signUp: (fullName: string, email: string, pass: string, role?: UserRole) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  hasPermission: (permission: SalesmanPermission) => boolean;
+  loginVvip: (userData: any, token: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -59,73 +66,132 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const [loading, setLoading] = useState<boolean>(true);
 
-  const fetchProfile = async (user: User, fallbackRole: UserRole = 'SALESMAN', overrideName?: string) => {
+  const fetchProfile = async (user: User, fallbackRole?: UserRole, overrideName?: string) => {
     try {
-      let profile = await getUserProfile(user.uid);
       const emailLower = (user.email || '').toLowerCase();
+      // 1. Fetch by user.uid
+      let profile = await getUserProfile(user.uid);
+
+      // 2. If not found by uid, query by email
+      if (!profile && emailLower) {
+        profile = await findUserProfileByEmail(emailLower);
+      }
+
       const predefined = PREDEFINED_ACCOUNTS.find((a) => a.email.toLowerCase() === emailLower);
       const isSuperAdminUser =
         emailLower === ADMIN_BOOTSTRAP_EMAIL.toLowerCase() ||
         predefined?.role === 'SUPER_ADMIN' ||
         profile?.role === 'SUPER_ADMIN';
 
-      const defaultRole: UserRole = isSuperAdminUser
-        ? 'SUPER_ADMIN'
-        : predefined?.role || fallbackRole;
-      const defaultName =
-        overrideName || predefined?.name || user.displayName || user.email?.split('@')[0] || 'Sales User';
-      const targetCompanyId = isSuperAdminUser
-        ? profile?.company_id
-        : profile?.company_id || predefined?.company_id || DEFAULT_COMPANY_ID;
-
-      if (!profile) {
-        profile = await createOrUpdateUserProfile(user.uid, {
-          full_name: defaultName,
-          email: user.email || '',
-          role: defaultRole,
-          company_id: targetCompanyId,
+      if (!profile && predefined) {
+        profile = {
+          id: user.uid,
+          full_name: predefined.name,
+          email: predefined.email,
+          role: predefined.role,
+          company_id: predefined.company_id,
           is_active: true,
-        });
-      } else if (isSuperAdminUser && profile.role !== 'SUPER_ADMIN') {
-        // Ensure super admin email always holds SUPER_ADMIN role
-        profile = await createOrUpdateUserProfile(user.uid, {
-          role: 'SUPER_ADMIN',
-        });
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
       }
 
-      setUserProfile(profile);
+      if (isSuperAdminUser) {
+        const superProfile: UserProfile = {
+          id: user.uid,
+          full_name: overrideName || profile?.full_name || 'Mujahid Islam',
+          email: ADMIN_BOOTSTRAP_EMAIL,
+          role: 'SUPER_ADMIN',
+          is_active: true,
+          created_at: profile?.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        setUserProfile(superProfile);
+        localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(superProfile));
+        return superProfile;
+      }
+
+      if (!profile) {
+        if (fallbackRole) {
+          const defaultName =
+            overrideName || user.displayName || user.email?.split('@')[0] || 'User';
+          profile = await createOrUpdateUserProfile(user.uid, {
+            full_name: defaultName,
+            email: user.email || '',
+            role: fallbackRole,
+            company_id: DEFAULT_COMPANY_ID,
+            is_active: true,
+          });
+        } else {
+          console.warn(`[ZaynOps Auth] No profile found for ${user.email}. Denying unassigned access.`);
+          setUserProfile(null);
+          return null;
+        }
+      }
+
+      // Authoritatively normalize role
+      const normalizedRole = normalizeUserRole(profile.role, profile.email);
+      if (!normalizedRole) {
+        console.warn(`[ZaynOps Auth] Unknown role "${profile.role}" for ${profile.email}.`);
+        setUserProfile(null);
+        return null;
+      }
+
+      const resolvedProfile: UserProfile = {
+        ...profile,
+        id: user.uid,
+        role: normalizedRole,
+      };
+
+      setUserProfile(resolvedProfile);
+      localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(resolvedProfile));
 
       // Load company record
-      const compId = profile.company_id || DEFAULT_COMPANY_ID;
+      const compId = resolvedProfile.company_id || DEFAULT_COMPANY_ID;
       const comp = await getCompanyById(compId);
       if (comp) {
         setCurrentCompany(comp);
       }
 
-      return profile;
+      return resolvedProfile;
     } catch (err) {
       console.error('Failed to load user profile from Firestore:', err);
-      // Fallback local profile if offline or rules restricted
       const emailLower = (user.email || '').toLowerCase();
       const predefined = PREDEFINED_ACCOUNTS.find((a) => a.email.toLowerCase() === emailLower);
       const isSuperAdminUser =
         emailLower === ADMIN_BOOTSTRAP_EMAIL.toLowerCase() || predefined?.role === 'SUPER_ADMIN';
-      const fallbackRoleToUse: UserRole = isSuperAdminUser
-        ? 'SUPER_ADMIN'
-        : predefined?.role || fallbackRole;
 
-      const fallback: UserProfile = {
-        id: user.uid,
-        full_name: overrideName || predefined?.name || user.displayName || 'Sales User',
-        email: user.email || emailLower,
-        role: fallbackRoleToUse,
-        company_id: isSuperAdminUser ? undefined : predefined?.company_id || DEFAULT_COMPANY_ID,
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      setUserProfile(fallback);
-      return fallback;
+      if (isSuperAdminUser) {
+        const fallback: UserProfile = {
+          id: user.uid,
+          full_name: 'Mujahid Islam',
+          email: ADMIN_BOOTSTRAP_EMAIL,
+          role: 'SUPER_ADMIN',
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        setUserProfile(fallback);
+        return fallback;
+      }
+
+      if (predefined) {
+        const fallback: UserProfile = {
+          id: user.uid,
+          full_name: predefined.name,
+          email: predefined.email,
+          role: predefined.role,
+          company_id: predefined.company_id,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        setUserProfile(fallback);
+        return fallback;
+      }
+
+      setUserProfile(null);
+      return null;
     }
   };
 
@@ -142,19 +208,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         cachedProfile = JSON.parse(cachedSessionStr);
         if (cachedProfile) {
-          if (cachedProfile.email?.toLowerCase() === ADMIN_BOOTSTRAP_EMAIL) {
-            cachedProfile.role = 'SUPER_ADMIN';
+          if (cachedProfile.role === 'SUPER_ADMIN') {
+            const vvipToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(VVIP_SESSION_KEY) : null;
+            if (!vvipToken) {
+              cachedProfile = null;
+              localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY);
+            }
           }
-          setUserProfile(cachedProfile);
-          if (cachedProfile.company_id) {
-            getCompanyById(cachedProfile.company_id).then((c) => {
-              if (c) setCurrentCompany(c);
-            });
+          if (cachedProfile) {
+            setUserProfile(cachedProfile);
+            if (cachedProfile.company_id) {
+              getCompanyById(cachedProfile.company_id).then((c) => {
+                if (c) setCurrentCompany(c);
+              });
+            }
           }
         }
       } catch (e) {
         console.error('Error parsing cached session:', e);
       }
+    }
+
+    // Validate VVIP session token if present
+    const existingVvipToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(VVIP_SESSION_KEY) : null;
+    if (existingVvipToken) {
+      fetch('/api/auth/vvip-validate-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: existingVvipToken }),
+      })
+        .then((res) => res.json())
+        .then((resData) => {
+          if (!resData.valid) {
+            sessionStorage.removeItem(VVIP_SESSION_KEY);
+            localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY);
+            setCurrentUser(null);
+            setUserProfile(null);
+          }
+        })
+        .catch(() => {});
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -179,7 +271,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    const handleUsersChanged = async () => {
+      const activeUser = auth.currentUser;
+      const cached = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
+      let sessionUid = activeUser?.uid;
+      if (!sessionUid && cached) {
+        try {
+          sessionUid = JSON.parse(cached)?.id;
+        } catch (e) {}
+      }
+      if (sessionUid) {
+        try {
+          const p = await getUserProfile(sessionUid);
+          if (p) {
+            setUserProfile(p);
+            localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(p));
+          }
+        } catch (e) {}
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('crm_users_changed', handleUsersChanged);
+    }
+
+    return () => {
+      unsubscribe();
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('crm_users_changed', handleUsersChanged);
+      }
+    };
   }, []);
 
   const switchCompanyView = (companyId: string | null) => {
@@ -208,10 +329,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       (acc) => acc.email.toLowerCase() === emailLower
     );
 
+    // 1. Authoritatively resolve the account by email FIRST
+    const authoritativeProfile = await findUserProfileByEmail(emailLower);
+
     // First verify if account has been deactivated
-    const allKnownUsers = await getAllUsers();
-    const existingUser = allKnownUsers.find((u) => u.email.toLowerCase() === emailLower);
-    if (existingUser && existingUser.is_active === false) {
+    if (authoritativeProfile && authoritativeProfile.is_active === false) {
       throw new Error('Your account has been deactivated. Please contact your company administrator.');
     }
 
@@ -220,11 +342,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Invalid password. Please enter the correct password.');
     }
 
+    const isSuper =
+      emailLower === ADMIN_BOOTSTRAP_EMAIL.toLowerCase() ||
+      predefined?.role === 'SUPER_ADMIN' ||
+      authoritativeProfile?.role === 'SUPER_ADMIN';
+
+    // Strict role determination: preserve ADMIN, never default to SALESMAN
+    const targetRole: UserRole = isSuper
+      ? 'SUPER_ADMIN'
+      : (authoritativeProfile?.role
+          ? (normalizeUserRole(authoritativeProfile.role, cleanEmail) as UserRole)
+          : (predefined?.role || 'UNASSIGNED')) as UserRole;
+
+    const targetCompany = isSuper
+      ? undefined
+      : authoritativeProfile?.company_id || predefined?.company_id || DEFAULT_COMPANY_ID;
+    const targetName =
+      authoritativeProfile?.full_name || predefined?.name || cleanEmail.split('@')[0];
+
     try {
       // Attempt standard Firebase Auth sign in
       const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
       if (userCredential.user) {
-        const profile = await fetchProfile(userCredential.user);
+        let profile = await fetchProfile(userCredential.user);
+        if (!profile && (authoritativeProfile || predefined || isSuper)) {
+          profile = await createOrUpdateUserProfile(userCredential.user.uid, {
+            full_name: targetName,
+            email: cleanEmail,
+            role: targetRole,
+            company_id: targetCompany,
+            is_active: true,
+            permissions: authoritativeProfile?.permissions,
+          });
+        }
         if (profile && profile.is_active === false) {
           await fbSignOut(auth);
           localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY);
@@ -234,7 +384,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         setCurrentUser(userCredential.user);
         if (profile) {
+          setUserProfile(profile);
           localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(profile));
+          if (profile.company_id) {
+            getCompanyById(profile.company_id).then((c) => {
+              if (c) setCurrentCompany(c);
+            });
+          }
         }
       }
     } catch (err: any) {
@@ -243,23 +399,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         err.code === 'auth/user-not-found' ||
         err.code === 'auth/invalid-credential'
       ) {
-        if (predefined) {
+        if (predefined || authoritativeProfile || isSuper) {
           try {
             const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
             if (userCredential.user) {
               await updateProfile(userCredential.user, {
-                displayName: predefined.name,
+                displayName: targetName,
               });
               const profile = await createOrUpdateUserProfile(userCredential.user.uid, {
-                full_name: predefined.name,
+                full_name: targetName,
                 email: cleanEmail,
-                role: predefined.role,
-                company_id: predefined.company_id,
+                role: targetRole,
+                company_id: targetCompany,
                 is_active: true,
+                permissions: authoritativeProfile?.permissions,
               });
               setCurrentUser(userCredential.user);
               setUserProfile(profile);
               localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(profile));
+              if (targetCompany) {
+                getCompanyById(targetCompany).then((c) => {
+                  if (c) setCurrentCompany(c);
+                });
+              }
               return;
             }
           } catch (createErr: any) {
@@ -272,7 +434,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (
         err.code === 'auth/operation-not-allowed' ||
         err.code === 'auth/admin-restricted-operation' ||
-        predefined
+        predefined ||
+        authoritativeProfile ||
+        isSuper
       ) {
         try {
           let fbUser = auth.currentUser;
@@ -281,90 +445,80 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             fbUser = anonCred.user;
           }
 
-          const userName = predefined ? predefined.name : cleanEmail.split('@')[0];
-          const isSuper = emailLower === ADMIN_BOOTSTRAP_EMAIL || predefined?.role === 'SUPER_ADMIN';
-          const userRole: UserRole = isSuper
-            ? 'SUPER_ADMIN'
-            : predefined
-            ? predefined.role
-            : 'SALESMAN';
-          const userCompany = isSuper
-            ? undefined
-            : predefined?.company_id || DEFAULT_COMPANY_ID;
-          const userId = fbUser?.uid || `uid-${userName.toLowerCase()}`;
+          const userId = fbUser?.uid || authoritativeProfile?.id || `uid-${targetName.toLowerCase()}`;
 
           // Create / update profile in Firestore
           let profile: UserProfile | null = null;
           try {
             profile = await createOrUpdateUserProfile(userId, {
-              full_name: userName,
+              full_name: targetName,
               email: cleanEmail,
-              role: userRole,
-              company_id: userCompany,
+              role: targetRole,
+              company_id: targetCompany,
               is_active: true,
+              permissions: authoritativeProfile?.permissions,
             });
           } catch (e) {
             console.warn('Could not write to firestore directly:', e);
             profile = {
               id: userId,
-              full_name: userName,
+              full_name: targetName,
               email: cleanEmail,
-              role: userRole,
-              company_id: userCompany,
+              role: targetRole,
+              company_id: targetCompany,
               is_active: true,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
+              permissions: authoritativeProfile?.permissions,
             };
           }
 
           const activeUser: any = fbUser || {
             uid: userId,
             email: cleanEmail,
-            displayName: userName,
+            displayName: targetName,
           };
 
           setCurrentUser(activeUser);
           setUserProfile(profile);
           localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(profile));
 
-          if (userCompany) {
-            getCompanyById(userCompany).then((c) => {
+          if (targetCompany) {
+            getCompanyById(targetCompany).then((c) => {
               if (c) setCurrentCompany(c);
             });
           }
           return;
         } catch (anonErr: any) {
           console.error('Anonymous auth fallback error:', anonErr);
-          const userName = predefined ? predefined.name : cleanEmail.split('@')[0];
-          const isSuper = emailLower === ADMIN_BOOTSTRAP_EMAIL || predefined?.role === 'SUPER_ADMIN';
-          const userRole: UserRole = isSuper
-            ? 'SUPER_ADMIN'
-            : predefined
-            ? predefined.role
-            : 'SALESMAN';
-          const userCompany = isSuper ? undefined : predefined?.company_id || DEFAULT_COMPANY_ID;
-          const userId = `uid-${userName.toLowerCase()}`;
+          const userId = authoritativeProfile?.id || `uid-${targetName.toLowerCase()}`;
 
           const localProfile: UserProfile = {
             id: userId,
-            full_name: userName,
+            full_name: targetName,
             email: cleanEmail,
-            role: userRole,
-            company_id: userCompany,
+            role: targetRole,
+            company_id: targetCompany,
             is_active: true,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            permissions: authoritativeProfile?.permissions,
           };
 
           const localUser: any = {
             uid: userId,
             email: cleanEmail,
-            displayName: userName,
+            displayName: targetName,
           };
 
           setCurrentUser(localUser);
           setUserProfile(localProfile);
           localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(localProfile));
+          if (targetCompany) {
+            getCompanyById(targetCompany).then((c) => {
+              if (c) setCurrentCompany(c);
+            });
+          }
           return;
         }
       }
@@ -468,16 +622,81 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const loginVvip = (userData: any, token: string) => {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(VVIP_SESSION_KEY, token);
+    }
+    const superProfile: UserProfile = {
+      id: userData?.uid || 'superadmin-vvip-platform-owner',
+      full_name: userData?.full_name || 'Platform Owner (VVIP)',
+      email: userData?.email || ADMIN_BOOTSTRAP_EMAIL,
+      role: 'SUPER_ADMIN',
+      company_id: undefined,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    const superUser: any = {
+      uid: userData?.uid || 'superadmin-vvip-platform-owner',
+      email: userData?.email || ADMIN_BOOTSTRAP_EMAIL,
+      displayName: userData?.full_name || 'Platform Owner (VVIP)',
+    };
+    setCurrentUser(superUser);
+    setUserProfile(superProfile);
+    localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(superProfile));
+    setLastVvipActivity(Date.now());
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.pushState({}, '', '/super-admin');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+  };
+
+  const [lastVvipActivity, setLastVvipActivity] = useState<number>(Date.now());
+
+  useEffect(() => {
+    if (userProfile?.role !== 'SUPER_ADMIN') return;
+
+    const handleUserActivity = () => {
+      setLastVvipActivity(Date.now());
+    };
+
+    window.addEventListener('mousemove', handleUserActivity);
+    window.addEventListener('keydown', handleUserActivity);
+    window.addEventListener('click', handleUserActivity);
+
+    const checkInactivity = setInterval(() => {
+      const inactiveDuration = Date.now() - lastVvipActivity;
+      if (inactiveDuration > 15 * 60 * 1000) {
+        console.warn('VVIP platform session expired due to 15-minute inactivity.');
+        signOut();
+      }
+    }, 30000);
+
+    return () => {
+      window.removeEventListener('mousemove', handleUserActivity);
+      window.removeEventListener('keydown', handleUserActivity);
+      window.removeEventListener('click', handleUserActivity);
+      clearInterval(checkInactivity);
+    };
+  }, [userProfile?.role, lastVvipActivity]);
+
   const signOut = async () => {
     try {
       await fbSignOut(auth);
     } catch (e) {
       console.warn('Signout warning:', e);
     }
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem(VVIP_SESSION_KEY);
+    }
     localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY);
     localStorage.removeItem(VIEW_COMPANY_KEY);
     setCurrentUser(null);
     setUserProfile(null);
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.replaceState({}, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
   };
 
   const refreshProfile = async () => {
@@ -486,16 +705,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const isSuperAdmin =
-    userProfile?.role === 'SUPER_ADMIN' ||
-    currentUser?.email?.toLowerCase() === ADMIN_BOOTSTRAP_EMAIL;
-  const isCompanyAdmin = userProfile?.role?.toUpperCase() === 'ADMIN' && !isSuperAdmin;
-  const isAdmin = isSuperAdmin || userProfile?.role?.toUpperCase() === 'ADMIN';
-  const isSalesman = !isAdmin;
+  const isSuperAdmin = userProfile?.role === 'SUPER_ADMIN';
+  const isCompanyAdmin = userProfile?.role?.toUpperCase() === 'ADMIN';
+  const isAdmin = userProfile?.role?.toUpperCase() === 'ADMIN'; // Strictly Company Admin, not Super Admin
+  const isSalesman = userProfile?.role?.toUpperCase() === 'SALESMAN';
+  const isCustomer = userProfile?.role?.toUpperCase() === 'CUSTOMER';
   const isActive = userProfile?.is_active !== false;
 
-  const companyId =
-    activeViewingCompanyId || userProfile?.company_id || DEFAULT_COMPANY_ID;
+  const companyId = isSuperAdmin ? 'PLATFORM' : (userProfile?.company_id || DEFAULT_COMPANY_ID);
   const isCompanyActive = isSuperAdmin || (currentCompany ? currentCompany.status === 'ACTIVE' : true);
 
   return (
@@ -508,6 +725,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAdmin,
         isCompanyAdmin,
         isSalesman,
+        isCustomer,
         isActive,
         currentCompany,
         companyId,
@@ -519,6 +737,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signUp,
         signOut,
         refreshProfile,
+        loginVvip,
+        hasPermission: (perm: SalesmanPermission) => hasPermission(userProfile, perm),
       }}
     >
       {children}

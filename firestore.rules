@@ -29,14 +29,13 @@ service cloud.firestore {
       );
     }
 
-    // Check if authenticated user has Company Admin or Super Admin privileges
+    // Check if authenticated user has Company Admin privileges (strictly NOT Super Admin)
     function isAdmin() {
-      return isAuthenticated() && (
-        isSuperAdmin() ||
-        (userDocExists() && (
+      return isAuthenticated() && !isSuperAdmin() && (
+        userDocExists() && (
           getUserData().role == 'ADMIN' ||
           getUserData().role == 'admin'
-        ))
+        )
       );
     }
 
@@ -47,6 +46,19 @@ service cloud.firestore {
         !userDocExists() ||
         !('is_active' in getUserData()) ||
         getUserData().is_active == true
+      );
+    }
+
+    // Check if authenticated user has a specific granular CRM permission
+    function hasPermission(perm) {
+      return isAuthenticated() && !isSuperAdmin() && (
+        isAdmin() ||
+        (
+          userDocExists() &&
+          ('permissions' in getUserData()) &&
+          (getUserData().permissions is list) &&
+          getUserData().permissions.hasAny([perm])
+        )
       );
     }
 
@@ -65,26 +77,36 @@ service cloud.firestore {
       );
     }
 
-    // Check if a document belongs to the authenticated user's company
+    // Check if a document belongs to the authenticated user's company (VVIP does NOT belong to any individual company)
     function belongsToCompany(docData) {
-      return isSuperAdmin() || (
+      return !isSuperAdmin() && (
         !('company_id' in docData) ||
         docData.company_id == getUserCompanyId()
       );
     }
 
-    // Check if user has access to a specific lead
+    // Check if user has access to a specific lead (VVIP CANNOT access leads)
     function canAccessLead(leadId) {
-      return isAuthenticated() && (
-        isSuperAdmin() ||
+      return isAuthenticated() && !isSuperAdmin() && (
+        exists(/databases/$(database)/documents/leads/$(leadId)) &&
+        belongsToCompany(get(/databases/$(database)/documents/leads/$(leadId)).data) &&
         (
-          exists(/databases/$(database)/documents/leads/$(leadId)) &&
-          belongsToCompany(get(/databases/$(database)/documents/leads/$(leadId)).data) &&
-          (
-            isAdmin() ||
-            get(/databases/$(database)/documents/leads/$(leadId)).data.assigned_to == request.auth.uid ||
-            get(/databases/$(database)/documents/leads/$(leadId)).data.created_by == request.auth.uid
-          )
+          isAdmin() ||
+          get(/databases/$(database)/documents/leads/$(leadId)).data.assigned_to == request.auth.uid ||
+          get(/databases/$(database)/documents/leads/$(leadId)).data.created_by == request.auth.uid
+        )
+      );
+    }
+
+    // Check if user has access to a specific client
+    function canAccessClient(clientId) {
+      return isAuthenticated() && !isSuperAdmin() && (
+        exists(/databases/$(database)/documents/clients/$(clientId)) &&
+        belongsToCompany(get(/databases/$(database)/documents/clients/$(clientId)).data) &&
+        (
+          isAdmin() ||
+          hasPermission('CLIENTS_VIEW') ||
+          get(/databases/$(database)/documents/clients/$(clientId)).data.owner_id == request.auth.uid
         )
       );
     }
@@ -164,7 +186,7 @@ service cloud.firestore {
       // Update profile:
       // - Super Admin can update any profile
       // - Company Admin can update profiles in their own company (cannot create Super Admin or change company_id)
-      // - Users can update their own basic profile info
+      // - Users can update their own basic profile info (CANNOT modify permissions, role, company_id, or is_active)
       allow update: if isAuthenticated() && (
         isSuperAdmin() ||
         (
@@ -179,7 +201,8 @@ service cloud.firestore {
           isActive() &&
           request.resource.data.role == resource.data.role &&
           (!('company_id' in request.resource.data) || request.resource.data.company_id == resource.data.company_id) &&
-          (!('is_active' in request.resource.data) || request.resource.data.is_active == resource.data.is_active)
+          (!('is_active' in request.resource.data) || request.resource.data.is_active == resource.data.is_active) &&
+          (!('permissions' in request.resource.data) || request.resource.data.permissions == resource.data.permissions)
         )
       );
       
@@ -194,17 +217,22 @@ service cloud.firestore {
     // 4. Leads Collection (/leads/{leadId})
     // ==========================================
     match /leads/{leadId} {
-      // READ: Super Admin can read all. Company Admin can read all company leads. Salesman reads assigned/created.
+      // READ: Super Admin can read all. Company Admin can read all company leads. Salesman reads assigned/created if has LEADS_VIEW.
       allow read: if isAuthenticated() && isCompanyActive() && belongsToCompany(resource.data) && (
         isAdmin() ||
-        resource.data.assigned_to == request.auth.uid ||
-        resource.data.created_by == request.auth.uid
+        (
+          hasPermission('LEADS_VIEW') && (
+            resource.data.assigned_to == request.auth.uid ||
+            resource.data.created_by == request.auth.uid
+          )
+        )
       );
       
       // CREATE:
       // - Must be authenticated, active, and company active
       // - created_by must match request.auth.uid
       // - Must belong to user's company
+      // - If salesman, must possess LEADS_CREATE permission
       allow create: if isAuthenticated() && isActive() && isCompanyActive() &&
                     request.resource.data.created_by == request.auth.uid &&
                     request.resource.data.company_name is string &&
@@ -214,49 +242,70 @@ service cloud.firestore {
                     (!('priority' in request.resource.data) || isValidPriority(request.resource.data.priority)) &&
                     (
                       isAdmin() ||
-                      request.resource.data.assigned_to == request.auth.uid
+                      (hasPermission('LEADS_CREATE') && request.resource.data.assigned_to == request.auth.uid)
                     );
                     
       // UPDATE:
       allow update: if isAuthenticated() && isActive() && isCompanyActive() && belongsToCompany(resource.data) && (
         isAdmin() ||
         (
-          (resource.data.assigned_to == request.auth.uid || resource.data.created_by == request.auth.uid) &&
-          request.resource.data.assigned_to == resource.data.assigned_to &&
-          request.resource.data.created_by == resource.data.created_by &&
-          (!('status' in request.resource.data) || isValidStatus(request.resource.data.status)) &&
-          (!('priority' in request.resource.data) || isValidPriority(request.resource.data.priority))
+          // Case A: Reassignment / Transfer (requires LEADS_REASSIGN, LEADS_ASSIGN, or LEADS_TRANSFER permission, or assigned salesman handover)
+          (
+            request.resource.data.assigned_to != resource.data.assigned_to &&
+            (
+              hasPermission('LEADS_REASSIGN') ||
+              hasPermission('LEADS_ASSIGN') ||
+              hasPermission('LEADS_TRANSFER') ||
+              resource.data.assigned_to == request.auth.uid
+            )
+          ) ||
+          // Case B: General lead update (requires LEADS_EDIT permission)
+          (
+            hasPermission('LEADS_EDIT') &&
+            (resource.data.assigned_to == request.auth.uid || resource.data.created_by == request.auth.uid) &&
+            request.resource.data.assigned_to == resource.data.assigned_to &&
+            request.resource.data.created_by == resource.data.created_by &&
+            (!('status' in request.resource.data) || isValidStatus(request.resource.data.status)) &&
+            (!('priority' in request.resource.data) || isValidPriority(request.resource.data.priority))
+          )
         )
       );
       
-      // DELETE: Admin or Super Admin can delete leads (Admin-led Lead Deletion)
-      allow delete: if isAuthenticated() && isActive() && isCompanyActive() && belongsToCompany(resource.data) && isAdmin();
+      // DELETE: Admin, Super Admin, or Salesman with LEADS_DELETE permission
+      allow delete: if isAuthenticated() && isActive() && isCompanyActive() && belongsToCompany(resource.data) && (
+        isAdmin() ||
+        hasPermission('LEADS_DELETE')
+      );
 
       // ------------------------------------------
       // Lead Subcollection: Activities
       // ------------------------------------------
       match /activities/{activityId} {
-        allow read: if canAccessLead(leadId);
+        allow read: if canAccessLead(leadId) && (isAdmin() || hasPermission('ACTIVITIES_VIEW'));
         
         allow create: if isAuthenticated() && isActive() && canAccessLead(leadId) &&
+                      (isAdmin() || hasPermission('ACTIVITIES_LOG')) &&
                       request.resource.data.created_by == request.auth.uid &&
                       (!('lead_id' in request.resource.data) || request.resource.data.lead_id == leadId);
                       
-        allow update, delete: if isAuthenticated() && isActive() && isAdmin();
+        allow update: if isAuthenticated() && isActive() && isAdmin();
+        allow delete: if isAuthenticated() && isActive() && (isAdmin() || hasPermission('ACTIVITIES_DELETE'));
       }
 
       // ------------------------------------------
       // Lead Subcollection: Follow-ups
       // ------------------------------------------
       match /followups/{followupId} {
-        allow read: if canAccessLead(leadId);
+        allow read: if canAccessLead(leadId) && (isAdmin() || hasPermission('FOLLOWUPS_VIEW'));
         
         allow create: if isAuthenticated() && isActive() && canAccessLead(leadId) &&
+                      (isAdmin() || hasPermission('FOLLOWUPS_CREATE')) &&
                       request.resource.data.created_by == request.auth.uid &&
                       (!('status' in request.resource.data) || isValidFollowupStatus(request.resource.data.status)) &&
                       (!('lead_id' in request.resource.data) || request.resource.data.lead_id == leadId);
                       
         allow update: if isAuthenticated() && isActive() && canAccessLead(leadId) &&
+                      (isAdmin() || hasPermission('FOLLOWUPS_EDIT')) &&
                       (!('status' in request.resource.data) || isValidFollowupStatus(request.resource.data.status));
                       
         allow delete: if isAuthenticated() && isActive() && (isAdmin() || canAccessLead(leadId));
@@ -267,7 +316,7 @@ service cloud.firestore {
       // ------------------------------------------
       match /transfers/{transferId} {
         allow read: if canAccessLead(leadId);
-        allow create: if isAuthenticated() && isActive() && isAdmin() &&
+        allow create: if isAuthenticated() && isActive() && (isAdmin() || hasPermission('LEADS_REASSIGN')) &&
                       request.resource.data.transferred_by == request.auth.uid;
         allow update, delete: if false;
       }
@@ -299,9 +348,12 @@ service cloud.firestore {
     // 5. Root Activities Collection (/activities/{activityId})
     // ==========================================
     match /activities/{activityId} {
-      allow read: if isAuthenticated() && belongsToCompany(resource.data) && (isAdmin() || resource.data.created_by == request.auth.uid || resource.data.performed_by == request.auth.uid);
-      allow create: if isAuthenticated() && isActive() && request.resource.data.created_by == request.auth.uid && belongsToCompany(request.resource.data);
-      allow update, delete: if isAuthenticated() && isActive() && isAdmin() && belongsToCompany(resource.data);
+      allow read: if isAuthenticated() && belongsToCompany(resource.data) && (
+        isAdmin() || 
+        (hasPermission('ACTIVITIES_VIEW') && (resource.data.created_by == request.auth.uid || resource.data.performed_by == request.auth.uid))
+      );
+      allow create: if isAuthenticated() && isActive() && (isAdmin() || hasPermission('ACTIVITIES_LOG')) && request.resource.data.created_by == request.auth.uid && belongsToCompany(request.resource.data);
+      allow update, delete: if isAuthenticated() && isActive() && (isAdmin() || hasPermission('ACTIVITIES_DELETE')) && belongsToCompany(resource.data);
     }
 
     // ==========================================
@@ -310,18 +362,15 @@ service cloud.firestore {
     match /followups/{followupId} {
       allow read: if isAuthenticated() && belongsToCompany(resource.data) && (
         isAdmin() || 
-        resource.data.assigned_to == request.auth.uid ||
-        resource.data.created_by == request.auth.uid
+        (hasPermission('FOLLOWUPS_VIEW') && (resource.data.assigned_to == request.auth.uid || resource.data.created_by == request.auth.uid))
       );
       allow create: if isAuthenticated() && isActive() && belongsToCompany(request.resource.data) && (
         isAdmin() || 
-        request.resource.data.assigned_to == request.auth.uid ||
-        request.resource.data.created_by == request.auth.uid
+        (hasPermission('FOLLOWUPS_CREATE') && (request.resource.data.assigned_to == request.auth.uid || request.resource.data.created_by == request.auth.uid))
       );
       allow update: if isAuthenticated() && isActive() && belongsToCompany(resource.data) && (
         isAdmin() || 
-        resource.data.assigned_to == request.auth.uid ||
-        resource.data.created_by == request.auth.uid
+        (hasPermission('FOLLOWUPS_EDIT') && (resource.data.assigned_to == request.auth.uid || resource.data.created_by == request.auth.uid))
       );
       allow delete: if isAuthenticated() && isActive() && belongsToCompany(resource.data) && (isAdmin() || resource.data.created_by == request.auth.uid);
     }
@@ -374,6 +423,7 @@ service cloud.firestore {
                     request.resource.data.entity_type is string &&
                     request.resource.data.description is string &&
                     (
+                      isSuperAdmin() ||
                       isAdmin() ||
                       request.resource.data.performed_by == request.auth.uid
                     );
@@ -386,12 +436,16 @@ service cloud.firestore {
     // 9. Clients Collection (/clients/{clientId})
     // ==========================================
     match /clients/{clientId} {
-      allow read: if isAuthenticated() && belongsToCompany(resource.data);
+      allow read: if isAuthenticated() && belongsToCompany(resource.data) && (
+        isAdmin() ||
+        hasPermission('CLIENTS_VIEW') ||
+        resource.data.owner_id == request.auth.uid
+      );
 
       allow create: if isAuthenticated() && isActive() && belongsToCompany(request.resource.data) &&
+                    (isAdmin() || hasPermission('CLIENTS_CREATE') || request.resource.data.owner_id == request.auth.uid) &&
                     request.resource.data.company_name is string &&
                     request.resource.data.company_name.size() > 0 &&
-                    request.resource.data.source_lead_id is string &&
                     request.resource.data.owner_id is string &&
                     (!('status' in request.resource.data) || request.resource.data.status in ['Active', 'Inactive']) &&
                     (
@@ -402,14 +456,33 @@ service cloud.firestore {
       allow update: if isAuthenticated() && isActive() && belongsToCompany(resource.data) && (
         isAdmin() ||
         (
+          hasPermission('CLIENTS_EDIT') &&
           resource.data.owner_id == request.auth.uid &&
           request.resource.data.owner_id == resource.data.owner_id &&
-          request.resource.data.source_lead_id == resource.data.source_lead_id &&
           (!('status' in request.resource.data) || request.resource.data.status in ['Active', 'Inactive'])
+        ) ||
+        (
+          // Client Transfer: admin, user with CLIENTS_TRANSFER, or current owner transferring
+          (hasPermission('CLIENTS_TRANSFER') || resource.data.owner_id == request.auth.uid) &&
+          request.resource.data.owner_id is string
         )
       );
 
       allow delete: if isAuthenticated() && isActive() && belongsToCompany(resource.data) && isAdmin();
+
+      // Client Subcollection: Activities
+      match /activities/{activityId} {
+        allow read: if canAccessClient(clientId) && (isAdmin() || hasPermission('ACTIVITIES_VIEW') || hasPermission('COMMUNICATIONS_VIEW'));
+        allow create: if isAuthenticated() && isActive() && canAccessClient(clientId);
+        allow update, delete: if isAuthenticated() && isActive() && (isAdmin() || resource.data.created_by == request.auth.uid);
+      }
+
+      // Client Subcollection: Transfers
+      match /transfers/{transferId} {
+        allow read: if canAccessClient(clientId);
+        allow create: if isAuthenticated() && isActive() && canAccessClient(clientId);
+        allow update, delete: if false;
+      }
     }
 
     // ==========================================
@@ -457,6 +530,33 @@ service cloud.firestore {
     // ==========================================
     match /import_jobs/{jobId} {
       allow read, create, update, delete: if isAuthenticated() && isActive() && isAdmin() && belongsToCompany(resource.data);
+    }
+
+    // ==========================================
+    // 14. Client Transfers (/client_transfers/{transferId})
+    // ==========================================
+    match /client_transfers/{transferId} {
+      allow read: if isAuthenticated() && belongsToCompany(resource.data);
+      allow create: if isAuthenticated() && isActive() && belongsToCompany(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    // ==========================================
+    // 15. Lead Transfers (/lead_transfers/{transferId})
+    // ==========================================
+    match /lead_transfers/{transferId} {
+      allow read: if isAuthenticated() && belongsToCompany(resource.data);
+      allow create: if isAuthenticated() && isActive() && belongsToCompany(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    // ==========================================
+    // 16. Unique Clients Deterministic Lock (/unique_clients/{lockId})
+    // ==========================================
+    match /unique_clients/{lockId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isActive();
+      allow delete: if isAuthenticated() && isAdmin();
     }
   }
 }

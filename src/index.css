@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 /* ==========================================================================
-   ZAYNOS PREMIUM DESIGN SYSTEM — CSS VARIABLES & THEME ENGINE
+   ZAYNOPS PREMIUM DESIGN SYSTEM — CSS VARIABLES & THEME ENGINE
    ========================================================================== */
 
 :root,
 [data-theme="obsidian-gold"] {
-  /* Core ZaynOs Identity Tokens */
+  /* Core ZaynOps Identity Tokens */
   --bg-base: #121212;
   --bg-card: #1E1E1E;
   --bg-elevated: #282828;
@@ -47,7 +47,7 @@
 }
 
 [data-theme="midnight-navy"] {
-  /* Core ZaynOs Identity Tokens */
+  /* Core ZaynOps Identity Tokens */
   --bg-base: #0B1120;
   --bg-card: #131D31;
   --bg-elevated: #1E293B;
@@ -88,7 +88,7 @@
 }
 
 [data-theme="emerald-noir"] {
-  /* Core ZaynOs Identity Tokens */
+  /* Core ZaynOps Identity Tokens */
   --bg-base: #09090B;
   --bg-card: #141416;
   --bg-elevated: #1F1F23;
@@ -389,12 +389,14 @@ html, body {
 /* Primary color mappings across existing controls */
 [data-theme] .bg-indigo-600,
 [data-theme] .bg-indigo-700,
+[data-theme] .zaynops-btn-primary,
 [data-theme] .zaynos-btn-primary {
   background-color: var(--color-primary) !important;
   color: var(--text-inverse) !important;
 }
 [data-theme] .bg-indigo-600 *,
 [data-theme] .bg-indigo-700 *,
+[data-theme] .zaynops-btn-primary *,
 [data-theme] .zaynos-btn-primary * {
   color: inherit !important;
 }
@@ -781,9 +783,10 @@ table {
 }
 
 /* ==========================================================================
-   ZAYNOS SEMANTIC UTILITY CLASSES
+   ZAYNOPS SEMANTIC UTILITY CLASSES
    ========================================================================== */
 
+.zaynops-card,
 .zaynos-card {
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -792,6 +795,7 @@ table {
   box-shadow: 0 4px 12px var(--shadow-color);
 }
 
+.zaynops-btn-primary,
 .zaynos-btn-primary {
   background-color: var(--color-primary);
   color: var(--text-inverse);
@@ -805,14 +809,17 @@ table {
   gap: 0.5rem;
   cursor: pointer;
 }
+.zaynops-btn-primary:hover,
 .zaynos-btn-primary:hover {
   background-color: var(--color-primary-hover);
   transform: translateY(-1px);
 }
+.zaynops-btn-primary:active,
 .zaynos-btn-primary:active {
   transform: translateY(0);
 }
 
+.zaynops-btn-secondary,
 .zaynos-btn-secondary {
   background-color: var(--bg-elevated);
   border: 1px solid var(--border-color);

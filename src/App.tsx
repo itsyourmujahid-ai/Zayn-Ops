@@ -28,10 +28,11 @@ import { SegmentsPage } from './pages/SegmentsPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { SuperAdminPage } from './pages/SuperAdminPage';
 import { TeamPage } from './pages/TeamPage';
+import { ProfilePage } from './pages/ProfilePage';
 import { GlobalSearchModal } from './components/search/GlobalSearchModal';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthPage } from './pages/AuthPage';
-import { Compass, Building2 } from 'lucide-react';
+import { Compass, Building2, CheckCircle2 } from 'lucide-react';
 import { LeadRecord } from './types/database';
 import { recordSecurityAuditLog } from './lib/dal';
 
@@ -117,6 +118,8 @@ const AuthenticatedCRM: React.FC = () => {
         return '/super-admin';
       case 'settings':
         return '/settings';
+      case 'profile':
+        return '/profile';
       case 'search':
         return query ? `/search?q=${encodeURIComponent(query)}` : '/search';
       default:
@@ -128,6 +131,43 @@ const AuthenticatedCRM: React.FC = () => {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const applyPathState = (pathname: string, searchStr: string, isPopState: boolean = false) => {
+        // VVIP Isolation Guard: VVIP is strictly locked to /super-admin and cannot enter company CRM
+        if (isSuperAdmin) {
+          if (pathname !== '/super-admin') {
+            window.history.replaceState({}, '', '/super-admin');
+          }
+          setCurrentView('super-admin');
+          return;
+        }
+
+        // Customer Isolation Guard: Customers have no access to CRM views
+        if (userProfile?.role === 'CUSTOMER') {
+          if (pathname !== '/dashboard' && pathname !== '/') {
+            window.history.replaceState({}, '', '/');
+          }
+          setCurrentView('dashboard');
+          return;
+        }
+
+        // Strict protection for /super-admin: Non-VVIP users are blocked
+        if (pathname === '/super-admin') {
+          if (!isPopState) {
+            addToast(
+              'error',
+              'Access Denied',
+              'Super Administrator credentials required to access Super Admin Panel.'
+            );
+            recordSecurityAuditLog({
+              action: 'security_unauthorized_action',
+              description: `Security Notice: User ${userProfile?.full_name || 'CRM User'} attempted direct URL navigation to /super-admin.`,
+              metadata: { path: pathname, user_role: userProfile?.role || 'SALESMAN', blocked: true },
+            });
+            window.history.replaceState({}, '', '/');
+          }
+          setCurrentView('dashboard');
+          return;
+        }
+
         if (pathname.startsWith('/leads/')) {
           const id = pathname.replace('/leads/', '').trim();
           if (id) {
@@ -170,12 +210,14 @@ const AuthenticatedCRM: React.FC = () => {
           setCurrentView('data-quality');
         } else if (pathname === '/settings') {
           setCurrentView('settings');
+        } else if (pathname === '/profile') {
+          setCurrentView('profile');
         } else if (pathname === '/search' || pathname.startsWith('/search')) {
           const params = new URLSearchParams(searchStr);
           setSearchQueryParam(params.get('q') || '');
           setCurrentView('search');
         } else if (pathname === '/team') {
-          if (userProfile?.role === 'ADMIN' || isSuperAdmin) {
+          if (userProfile?.role === 'ADMIN') {
             setCurrentView('team');
           } else {
             if (!isPopState) {
@@ -194,7 +236,7 @@ const AuthenticatedCRM: React.FC = () => {
             setCurrentView('dashboard');
           }
         } else if (pathname === '/data-management') {
-          if (userProfile?.role === 'ADMIN' || isSuperAdmin) {
+          if (userProfile?.role === 'ADMIN') {
             setCurrentView('data-management');
           } else {
             if (!isPopState) {
@@ -213,7 +255,7 @@ const AuthenticatedCRM: React.FC = () => {
             setCurrentView('dashboard');
           }
         } else if (pathname === '/audit' || pathname === '/audit-logs') {
-          if (userProfile?.role === 'ADMIN' || isSuperAdmin) {
+          if (userProfile?.role === 'ADMIN') {
             setCurrentView('audit');
           } else {
             if (!isPopState) {
@@ -225,25 +267,6 @@ const AuthenticatedCRM: React.FC = () => {
               recordSecurityAuditLog({
                 action: 'security_unauthorized_action',
                 description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted direct URL navigation to /audit.`,
-                metadata: { path: pathname, user_role: userProfile?.role || 'SALESMAN', blocked: true },
-              });
-              window.history.replaceState({}, '', '/');
-            }
-            setCurrentView('dashboard');
-          }
-        } else if (pathname === '/super-admin') {
-          if (isSuperAdmin) {
-            setCurrentView('super-admin');
-          } else {
-            if (!isPopState) {
-              addToast(
-                'error',
-                'Access Denied',
-                'Super Administrator credentials required to access Super Admin Panel.'
-              );
-              recordSecurityAuditLog({
-                action: 'security_unauthorized_action',
-                description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted direct URL navigation to /super-admin.`,
                 metadata: { path: pathname, user_role: userProfile?.role || 'SALESMAN', blocked: true },
               });
               window.history.replaceState({}, '', '/');
@@ -306,6 +329,20 @@ const AuthenticatedCRM: React.FC = () => {
       salesman?: string;
     }
   ) => {
+    // VVIP is restricted strictly to platform governance
+    if (isSuperAdmin) {
+      if (view !== 'super-admin') {
+        return;
+      }
+    }
+
+    // Customer is restricted to dashboard customer view
+    if (userProfile?.role === 'CUSTOMER') {
+      if (view !== 'dashboard') {
+        return;
+      }
+    }
+
     // Super Admin security check
     if (view === 'super-admin' && !isSuperAdmin) {
       addToast(
@@ -322,7 +359,7 @@ const AuthenticatedCRM: React.FC = () => {
     }
 
     // Company Admin Security check for Team Management navigation
-    if (view === 'team' && userProfile?.role !== 'ADMIN' && !isSuperAdmin) {
+    if (view === 'team' && userProfile?.role !== 'ADMIN') {
       addToast(
         'error',
         'Access Denied',
@@ -337,7 +374,7 @@ const AuthenticatedCRM: React.FC = () => {
     }
 
     // Phase M: RBAC Security check for Audit Logs navigation
-    if (view === 'audit' && userProfile?.role !== 'ADMIN' && !isSuperAdmin) {
+    if (view === 'audit' && userProfile?.role !== 'ADMIN') {
       addToast(
         'error',
         'Access Denied',
@@ -351,7 +388,7 @@ const AuthenticatedCRM: React.FC = () => {
       return;
     }
 
-    if (view === 'data-management' && userProfile?.role !== 'ADMIN' && !isSuperAdmin) {
+    if (view === 'data-management' && userProfile?.role !== 'ADMIN') {
       addToast(
         'error',
         'Access Denied',
@@ -425,6 +462,39 @@ const AuthenticatedCRM: React.FC = () => {
     return <AuthPage />;
   }
 
+  // Strict role verification: Never default to SALESMAN for missing or unassigned roles
+  const validRoles = ['SUPER_ADMIN', 'ADMIN', 'SALESMAN', 'CUSTOMER'];
+  const hasValidRole = userProfile && validRoles.includes(userProfile.role);
+
+  if (userProfile && !hasValidRole) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--bg-base)] px-4">
+        <div className="w-full max-w-md rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] p-8 text-center shadow-md">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20">
+            <Compass className="h-6 w-6" />
+          </div>
+          <h2 className="mt-4 text-xl font-bold text-[var(--text-main)]">Access Restricted</h2>
+          <p className="mt-2 text-xs text-[var(--text-muted)] leading-relaxed">
+            Your account ({currentUser.email}) does not have an authorized role assigned. Protected employee CRM access is denied.
+          </p>
+          <div className="mt-4 rounded-lg bg-[var(--bg-elevated)] p-3 text-left text-xs text-[var(--text-secondary)] border border-[var(--border-color)]">
+            <p className="font-semibold text-[var(--text-main)]">Authorization Notice</p>
+            <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+              Please contact your ZaynOps Super Administrator or Company Admin to assign an active role to your account.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={signOut}
+            className="mt-6 inline-flex w-full items-center justify-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] px-4 py-2.5 text-xs font-semibold text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition cursor-pointer"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // If user account has been disabled by Admin
   if (userProfile && !isActive) {
     return (
@@ -459,7 +529,7 @@ const AuthenticatedCRM: React.FC = () => {
           </div>
           <h2 className="mt-4 text-xl font-bold text-slate-900">Organization Inactive</h2>
           <p className="mt-2 text-xs text-slate-500 leading-relaxed">
-            Your company organization ({currentCompany?.name || 'Company'}) has been deactivated by the ZaynOs Super Administrator. Please contact system support or your ZaynOs representative to restore access.
+            Your company organization ({currentCompany?.name || 'Company'}) has been deactivated by the ZaynOps Super Administrator. Please contact system support or your ZaynOps representative to restore access.
           </p>
           <button
             type="button"
@@ -492,6 +562,41 @@ const AuthenticatedCRM: React.FC = () => {
   };
 
   const renderActiveView = () => {
+    // VVIP is strictly locked to SuperAdminPage platform governance
+    if (isSuperAdmin) {
+      return <SuperAdminPage />;
+    }
+
+    // Customer users are strictly restricted to customer account view
+    if (userProfile?.role === 'CUSTOMER') {
+      return (
+        <div className="flex min-h-[60vh] items-center justify-center p-6">
+          <div className="w-full max-w-md rounded-2xl border border-[var(--border-color)] bg-[var(--bg-card)] p-8 text-center shadow-md">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+              <CheckCircle2 className="h-6 w-6" />
+            </div>
+            <h2 className="mt-4 text-xl font-bold text-[var(--text-main)]">Customer Account</h2>
+            <p className="mt-2 text-xs text-[var(--text-muted)] leading-relaxed">
+              Welcome, <span className="font-semibold text-[var(--text-main)]">{userProfile?.full_name || 'Customer'}</span> ({userProfile?.email || currentUser?.email}). Your customer account is verified and active.
+            </p>
+            <div className="mt-4 rounded-lg bg-[var(--bg-elevated)] p-3 text-left text-xs text-[var(--text-secondary)] border border-[var(--border-color)]">
+              <p className="font-semibold text-[var(--text-main)]">Support Notice</p>
+              <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                For account inquiries, order tracking, or service requests, please contact your dedicated company sales representative.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={signOut}
+              className="mt-6 inline-flex w-full items-center justify-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] px-4 py-2.5 text-xs font-semibold text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition cursor-pointer"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     // If a lead is currently selected, render the full Lead Details Page
     if (selectedLeadId) {
       return (
@@ -608,6 +713,8 @@ const AuthenticatedCRM: React.FC = () => {
         );
       case 'settings':
         return <SettingsPage />;
+      case 'profile':
+        return <ProfilePage onSelectLead={handleSelectLead} />;
       case 'super-admin':
         return <SuperAdminPage />;
       case 'search':

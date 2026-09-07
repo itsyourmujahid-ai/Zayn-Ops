@@ -60,9 +60,11 @@ import {
   AuditFilterState,
   ClientRecord,
   ClientStatus,
+  CreateClientInput,
   CreateClientFromLeadInput,
   UpdateClientInput,
   TransferClientInput,
+  ClientTransferRecord,
   TagRecord,
   TagType,
   CreateTagInput,
@@ -79,9 +81,12 @@ import {
   CompanyStatus,
   CreateCompanyInput,
   UpdateCompanyInput,
+  SalesmanPermission,
+  DEFAULT_SALESMAN_PERMISSIONS,
+  hasPermission,
 } from '../types/database';
 import { PREDEFINED_ACCOUNTS } from './predefinedAccounts';
-import { normalizePhone, normalizeEmail, normalizeCompanyName, getPairKey } from './dataQuality';
+import { normalizePhone, normalizeEmail, normalizeCompanyName, phonesMatch, getPairKey } from './dataQuality';
 
 const LOCAL_STORAGE_SESSION_KEY = 'crm_active_session_v1';
 const LOCAL_STORAGE_LEADS_KEY = 'crm_local_leads_v2';
@@ -92,6 +97,8 @@ const LOCAL_STORAGE_ATTACHMENTS_KEY = 'crm_local_attachments_v2';
 const LOCAL_STORAGE_NOTIFICATIONS_KEY = 'crm_local_notifications_v2';
 const LOCAL_STORAGE_AUDIT_LOGS_KEY = 'crm_local_audit_logs_v2';
 const LOCAL_STORAGE_CLIENTS_KEY = 'crm_local_clients_v2';
+const LOCAL_STORAGE_CLIENT_TRANSFERS_KEY = 'crm_local_client_transfers_v2';
+const LOCAL_STORAGE_LEAD_TRANSFERS_KEY = 'crm_local_lead_transfers_v2';
 const LOCAL_STORAGE_TAGS_KEY = 'crm_local_tags_v2';
 const LOCAL_STORAGE_SAVED_SEGMENTS_KEY = 'crm_local_saved_segments_v2';
 const LOCAL_STORAGE_NOT_DUPLICATES_KEY = 'crm_local_not_duplicates_v2';
@@ -506,6 +513,52 @@ export function notifyClientsChanged() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('crm_clients_changed'));
   }
+}
+
+export function notifyTransfersChanged() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('crm_transfers_changed'));
+  }
+}
+
+export function getLocalClientTransfers(): ClientTransferRecord[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_CLIENT_TRANSFERS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export function setLocalClientTransfers(transfers: ClientTransferRecord[]) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(LOCAL_STORAGE_CLIENT_TRANSFERS_KEY, JSON.stringify(transfers));
+  } catch (e) {
+    console.warn('LocalStorage save failed for client transfers:', e);
+  }
+  notifyTransfersChanged();
+}
+
+export function getLocalLeadTransfers(): LeadTransferRecord[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_LEAD_TRANSFERS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export function setLocalLeadTransfers(transfers: LeadTransferRecord[]) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(LOCAL_STORAGE_LEAD_TRANSFERS_KEY, JSON.stringify(transfers));
+  } catch (e) {
+    console.warn('LocalStorage save failed for lead transfers:', e);
+  }
+  notifyTransfersChanged();
 }
 
 // ----------------------------------------------------------------------
@@ -988,17 +1041,29 @@ export function getEffectiveUserName(): string {
   return getUserDisplayName(uid);
 }
 
+export function normalizeUserRole(rawRole?: any, email?: string): UserRole | null {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (cleanEmail === 'itsyourmujahid@gmail.com') {
+    return 'SUPER_ADMIN';
+  }
+  if (!rawRole) return null;
+  const str = String(rawRole).trim().toUpperCase();
+  if (str === 'SUPER_ADMIN' || str === 'SUPERADMIN') return 'SUPER_ADMIN';
+  if (str === 'ADMIN' || str === 'COMPANY_ADMIN') return 'ADMIN';
+  if (str === 'SALESMAN' || str === 'SALES_REP' || str === 'SALES') return 'SALESMAN';
+  if (str === 'CUSTOMER' || str === 'CLIENT') return 'CUSTOMER';
+  return null;
+}
+
 export function getEffectiveUserRole(): UserRole {
   if (typeof localStorage !== 'undefined') {
     try {
       const cachedSessionStr = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
       if (cachedSessionStr) {
         const cached = JSON.parse(cachedSessionStr);
-        if (cached && cached.role) {
-          const upper = String(cached.role).toUpperCase();
-          if (upper === 'SUPER_ADMIN' || cached.email?.toLowerCase() === 'itsyourmujahid@gmail.com') return 'SUPER_ADMIN';
-          if (upper === 'ADMIN') return 'ADMIN';
-          return 'SALESMAN';
+        if (cached && (cached.role || cached.email)) {
+          const norm = normalizeUserRole(cached.role, cached.email);
+          if (norm) return norm;
         }
       }
     } catch (e) {
@@ -1008,7 +1073,8 @@ export function getEffectiveUserRole(): UserRole {
   if (auth.currentUser?.email?.toLowerCase() === 'itsyourmujahid@gmail.com') {
     return 'SUPER_ADMIN';
   }
-  return 'SALESMAN';
+  // If no authenticated or valid role exists, do NOT default to SALESMAN
+  return 'UNASSIGNED' as UserRole;
 }
 
 export function isEffectiveSuperAdmin(): boolean {
@@ -1043,14 +1109,166 @@ export function getEffectiveCompanyId(): string {
 // 1. User Profiles & Team Management API
 // ==========================================
 
+export async function findUserProfileByEmail(email: string): Promise<UserProfile | null> {
+  if (!email) return null;
+  const cleanEmail = email.trim().toLowerCase();
+
+  // 1. Check local storage first (instant & authoritative for onboarded tenants)
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
+      if (raw) {
+        const users: UserProfile[] = JSON.parse(raw);
+        const match = users.find((u) => u.email && u.email.toLowerCase() === cleanEmail);
+        if (match) {
+          const normRole = normalizeUserRole(match.role, match.email);
+          return {
+            ...match,
+            role: (normRole || match.role) as UserRole,
+          };
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 2. Check Firestore users collection by email
+  try {
+    const usersCol = collection(db, 'users');
+    const q = query(usersCol, where('email', '==', cleanEmail));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const docSnap = snap.docs[0];
+      const data = docSnap.data();
+      const normRole = normalizeUserRole(data.role, data.email);
+      return {
+        id: docSnap.id,
+        ...data,
+        role: (normRole || data.role) as UserRole,
+        company_id: data.company_id,
+        is_active: data.is_active !== false,
+      } as UserProfile;
+    }
+  } catch (e) {
+    console.warn('Firestore findUserProfileByEmail query notice:', e);
+  }
+
+  // 3. Check PREDEFINED_ACCOUNTS
+  const predefined = PREDEFINED_ACCOUNTS.find((a) => a.email.toLowerCase() === cleanEmail);
+  if (predefined) {
+    return {
+      id: `uid-${predefined.name.toLowerCase()}`,
+      full_name: predefined.name,
+      email: predefined.email,
+      role: predefined.role,
+      company_id: predefined.company_id,
+      is_active: true,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    };
+  }
+
+  // 4. Check if this email is the contact_email of a registered company
+  try {
+    const companies = await getCompanies();
+    const matchingCompany = companies.find(
+      (c) => c.contact_email && c.contact_email.toLowerCase() === cleanEmail
+    );
+    if (matchingCompany) {
+      // This user was designated as the initial Company Admin during onboarding!
+      return {
+        id: `usr_${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
+        full_name: matchingCompany.admin_name || matchingCompany.contact_person || `${matchingCompany.name} Admin`,
+        email: cleanEmail,
+        role: 'ADMIN',
+        company_id: matchingCompany.id,
+        is_active: matchingCompany.status !== 'INACTIVE',
+        created_at: matchingCompany.created_at,
+        updated_at: matchingCompany.updated_at,
+      };
+    }
+  } catch (e) {}
+
+  return null;
+}
+
+export async function repairCompanyAdminAccounts(): Promise<void> {
+  if (typeof localStorage === 'undefined') return;
+
+  try {
+    const companies = await getCompanies();
+    const rawUsers = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
+    let users: UserProfile[] = rawUsers ? JSON.parse(rawUsers) : [];
+    let modified = false;
+
+    for (const company of companies) {
+      const contactEmail = company.contact_email?.trim().toLowerCase();
+      if (!contactEmail) continue;
+
+      const userIndex = users.findIndex((u) => u.email.toLowerCase() === contactEmail);
+      if (userIndex >= 0) {
+        const user = users[userIndex];
+        if (user.role !== 'ADMIN' || user.company_id !== company.id) {
+          console.info(`[ZaynOps Repair] Restoring Company Admin role for ${user.email} in company ${company.name}`);
+          users[userIndex] = {
+            ...user,
+            role: 'ADMIN',
+            company_id: company.id,
+            is_active: true,
+            updated_at: new Date().toISOString(),
+          };
+          modified = true;
+
+          try {
+            const userRef = doc(db, 'users', user.id);
+            await setDoc(userRef, { role: 'ADMIN', company_id: company.id }, { merge: true });
+          } catch (e) {}
+        }
+      } else {
+        const newAdmin: UserProfile = {
+          id: `usr_${contactEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
+          full_name: company.admin_name || company.contact_person || `${company.name} Admin`,
+          email: contactEmail,
+          role: 'ADMIN',
+          company_id: company.id,
+          is_active: true,
+          created_at: company.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        users.push(newAdmin);
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(users));
+      const sessionRaw = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
+      if (sessionRaw) {
+        try {
+          const session = JSON.parse(sessionRaw);
+          const repaired = users.find((u) => u.email.toLowerCase() === session.email?.toLowerCase());
+          if (repaired && repaired.role === 'ADMIN' && session.role !== 'ADMIN') {
+            session.role = 'ADMIN';
+            session.company_id = repaired.company_id;
+            localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(session));
+          }
+        } catch (e) {}
+      }
+    }
+  } catch (err) {
+    console.warn('[ZaynOps Repair] repairCompanyAdminAccounts warning:', err);
+  }
+}
+
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
+  // 1. Direct lookup by document ID in Firestore
   try {
     const userRef = doc(db, 'users', userId);
     const snap = await getDoc(userRef);
     if (snap.exists()) {
       const data = snap.data();
-      const isSuper = data.role?.toUpperCase() === 'SUPER_ADMIN' || data.email?.toLowerCase() === 'itsyourmujahid@gmail.com' || userId === 'uid-mujahid';
-      const resolvedRole: UserRole = isSuper ? 'SUPER_ADMIN' : data.role?.toUpperCase() === 'ADMIN' ? 'ADMIN' : 'SALESMAN';
+      const normRole = normalizeUserRole(data.role, data.email);
+      const isSuper = normRole === 'SUPER_ADMIN' || data.email?.toLowerCase() === 'itsyourmujahid@gmail.com' || userId === 'uid-mujahid';
+      const resolvedRole: UserRole = isSuper ? 'SUPER_ADMIN' : (normRole || (data.role as UserRole));
       return {
         id: snap.id,
         ...data,
@@ -1063,16 +1281,17 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
     console.warn('Firestore getUserProfile fallback to local store:', err);
   }
 
-  // Fallback to local
+  // 2. Fallback to local storage (by id or by email)
   if (typeof localStorage !== 'undefined') {
     try {
       const raw = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
       if (raw) {
         const users: UserProfile[] = JSON.parse(raw);
-        const found = users.find((u) => u.id === userId);
+        const found = users.find((u) => u.id === userId || u.email.toLowerCase() === userId.toLowerCase());
         if (found) {
-          const isSuper = found.role?.toUpperCase() === 'SUPER_ADMIN' || found.email?.toLowerCase() === 'itsyourmujahid@gmail.com' || userId === 'uid-mujahid';
-          const resolvedRole: UserRole = isSuper ? 'SUPER_ADMIN' : found.role?.toUpperCase() === 'ADMIN' ? 'ADMIN' : 'SALESMAN';
+          const normRole = normalizeUserRole(found.role, found.email);
+          const isSuper = normRole === 'SUPER_ADMIN' || found.email?.toLowerCase() === 'itsyourmujahid@gmail.com' || userId === 'uid-mujahid';
+          const resolvedRole: UserRole = isSuper ? 'SUPER_ADMIN' : (normRole || found.role);
           return {
             ...found,
             role: resolvedRole,
@@ -1084,6 +1303,12 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
       // ignore
     }
   }
+
+  // 3. Fallback to finding by email if userId could be an email
+  if (userId.includes('@')) {
+    return await findUserProfileByEmail(userId);
+  }
+
   return null;
 }
 
@@ -1092,18 +1317,51 @@ export async function createOrUpdateUserProfile(
   data: Partial<UserProfile>
 ): Promise<UserProfile> {
   const now = new Date().toISOString();
-  const roleToSet: UserRole = data.role && data.role.toUpperCase() === 'ADMIN' ? 'ADMIN' : 'SALESMAN';
+
+  // Find existing profile first to prevent downgrading an existing ADMIN
+  let existingProfile: UserProfile | null = null;
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
+      if (raw) {
+        const localUsers: UserProfile[] = JSON.parse(raw);
+        existingProfile = localUsers.find(
+          (u) => u.id === userId || (data.email && u.email.toLowerCase() === data.email.toLowerCase())
+        ) || null;
+      }
+    } catch (e) {}
+  }
+
+  const incomingRole = normalizeUserRole(data.role, data.email);
+  let roleToSet: UserRole;
+
+  if (incomingRole) {
+    roleToSet = incomingRole;
+  } else if (existingProfile?.role) {
+    roleToSet = existingProfile.role;
+  } else if (data.email?.toLowerCase() === 'itsyourmujahid@gmail.com') {
+    roleToSet = 'SUPER_ADMIN';
+  } else {
+    // If no role provided or recognized, preserve or throw/mark unassigned
+    roleToSet = (data.role as UserRole) || ('UNASSIGNED' as UserRole);
+  }
+
+  // Crucial protection: If existing user is ADMIN and an update lacks an explicit role or attempts demotion without cause, preserve ADMIN!
+  if (existingProfile?.role === 'ADMIN' && roleToSet !== 'ADMIN' && !data.role) {
+    roleToSet = 'ADMIN';
+  }
 
   const userProfile: UserProfile = {
     id: userId,
-    full_name: data.full_name || 'CRM User',
-    email: data.email || '',
-    avatar_url: data.avatar_url || '',
+    full_name: data.full_name || existingProfile?.full_name || 'CRM User',
+    email: data.email || existingProfile?.email || '',
+    avatar_url: data.avatar_url || existingProfile?.avatar_url || '',
     role: roleToSet,
-    is_active: data.is_active !== undefined ? data.is_active : true,
-    created_at: now,
+    company_id: data.company_id !== undefined ? data.company_id : existingProfile?.company_id,
+    is_active: data.is_active !== undefined ? data.is_active : (existingProfile?.is_active !== undefined ? existingProfile.is_active : true),
+    created_at: existingProfile?.created_at || now,
     updated_at: now,
-    ...data,
+    ...(data.permissions ? { permissions: data.permissions } : existingProfile?.permissions ? { permissions: existingProfile.permissions } : {}),
   };
 
   // Local storage save
@@ -1111,9 +1369,9 @@ export async function createOrUpdateUserProfile(
     try {
       const raw = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
       let users: UserProfile[] = raw ? JSON.parse(raw) : [];
-      const idx = users.findIndex((u) => u.id === userId);
+      const idx = users.findIndex((u) => u.id === userId || (data.email && u.email.toLowerCase() === data.email.toLowerCase()));
       if (idx >= 0) {
-        users[idx] = { ...users[idx], ...userProfile, updated_at: now };
+        users[idx] = { ...users[idx], ...userProfile, id: userId, updated_at: now };
       } else {
         users.push(userProfile);
       }
@@ -1159,11 +1417,15 @@ export async function getAllUsers(): Promise<UserProfile[]> {
       if (raw) {
         const localUsers: UserProfile[] = JSON.parse(raw);
         localUsers.forEach((u) => {
-          usersMap.set(u.id, u);
-          // Also check by email to override placeholder slug if real UID exists
+          const norm = normalizeUserRole(u.role, u.email);
+          const cleanedUser = {
+            ...u,
+            role: (norm || u.role) as UserRole,
+          };
+          usersMap.set(u.id, cleanedUser);
           for (const [key, existing] of usersMap.entries()) {
             if (existing.email.toLowerCase() === u.email.toLowerCase() && key !== u.id) {
-              usersMap.set(key, u);
+              usersMap.set(key, cleanedUser);
             }
           }
         });
@@ -1180,12 +1442,13 @@ export async function getAllUsers(): Promise<UserProfile[]> {
     if (!snap.empty) {
       snap.forEach((docSnap) => {
         const data = docSnap.data();
-        const isSuper = data.role?.toUpperCase() === 'SUPER_ADMIN' || data.email?.toLowerCase() === 'itsyourmujahid@gmail.com' || docSnap.id === 'uid-mujahid';
-        const role = isSuper ? 'SUPER_ADMIN' : data.role?.toUpperCase() === 'ADMIN' ? 'ADMIN' : 'SALESMAN';
+        const norm = normalizeUserRole(data.role, data.email);
+        const isSuper = norm === 'SUPER_ADMIN' || data.email?.toLowerCase() === 'itsyourmujahid@gmail.com' || docSnap.id === 'uid-mujahid';
+        const role = norm || (data.role as UserRole);
         const profile: UserProfile = {
           id: docSnap.id,
           ...data,
-          role: role as UserRole,
+          role: role,
           company_id: data.company_id || (isSuper ? undefined : DEFAULT_COMPANY_ID),
           is_active: data.is_active !== false,
         } as UserProfile;
@@ -1773,10 +2036,28 @@ export async function reassignLead(
   const adminName = performerName || getUserDisplayName(adminId);
   const now = new Date().toISOString();
 
-  // Update local cache
+  const actorProfile = await getUserProfile(adminId);
+  const role = actorProfile?.role || getEffectiveUserRole();
   const localList = getLocalLeads();
   const prevLead = localList.find((l) => l.id === leadId);
   const prevOwnerId = prevLead?.assigned_to || '';
+
+  const canAssign =
+    role === 'SUPER_ADMIN' ||
+    role === 'ADMIN' ||
+    hasPermission(actorProfile, 'LEADS_ASSIGN') ||
+    hasPermission(actorProfile, 'LEADS_TRANSFER') ||
+    prevOwnerId === adminId;
+  if (!canAssign) {
+    throw new Error('Unauthorized: You do not have permission to transfer or assign this lead.');
+  }
+
+  // Cross-tenant protection: Target representative must belong to the same company
+  const companyId = prevLead?.company_id || getEffectiveCompanyId() || DEFAULT_COMPANY_ID;
+  const targetProfile = await getUserProfile(newOwnerId);
+  if (targetProfile && targetProfile.company_id && targetProfile.company_id !== companyId) {
+    throw new Error('Cannot transfer lead: Target representative belongs to a different company.');
+  }
 
   const updated = localList.map((l) =>
     l.id === leadId ? { ...l, assigned_to: newOwnerId, updated_at: now } : l
@@ -1784,19 +2065,30 @@ export async function reassignLead(
   setLocalLeads(updated);
   notifyLeadsChanged();
 
-  // Save transfer record in subcollection
+  // Save transfer record in subcollection and root collection
   const transferRecord: LeadTransferRecord = {
-    id: 'tr_' + Date.now(),
+    id: 'tr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+    company_id: companyId,
     lead_id: leadId,
+    lead_name: prevLead?.company_name,
     previous_owner: prevOwnerId,
     previous_owner_name: previousOwnerName,
+    from_user_id: prevOwnerId,
+    from_user_name: previousOwnerName,
     new_owner: newOwnerId,
     new_owner_name: newOwnerName,
+    to_user_id: newOwnerId,
+    to_user_name: newOwnerName,
     transferred_by: adminId,
     transferred_by_name: adminName,
     transferred_at: now,
+    timestamp: now,
     reason: reason || '',
   };
+
+  // Cache in local lead transfers
+  const localLeadTransfers = getLocalLeadTransfers();
+  setLocalLeadTransfers([transferRecord, ...localLeadTransfers]);
 
   try {
     const transferCol = collection(db, 'leads', leadId, 'transfers');
@@ -1804,6 +2096,14 @@ export async function reassignLead(
     await addDoc(transferCol, data);
   } catch (e) {
     console.warn('Firestore transfer record fallback notice:', e);
+  }
+
+  try {
+    const rootCol = doc(db, 'lead_transfers', transferRecord.id);
+    const { id, ...data } = transferRecord;
+    await setDoc(rootCol, data);
+  } catch (e) {
+    console.warn('Firestore root lead_transfers fallback notice:', e);
   }
 
   // Update lead doc in Firestore
@@ -1985,8 +2285,11 @@ export async function deleteLead(
   const adminName = actor?.name || getEffectiveUserName();
   const adminRole = actor?.role || getEffectiveUserRole();
 
-  if (adminRole !== 'ADMIN' && adminRole !== 'SUPER_ADMIN') {
-    throw new Error('Unauthorized: Only Administrators can delete leads.');
+  const actorProfile = await getUserProfile(adminId);
+  const canDelete = adminRole === 'ADMIN' || adminRole === 'SUPER_ADMIN' || hasPermission(actorProfile, 'LEADS_DELETE');
+
+  if (!canDelete) {
+    throw new Error('Unauthorized: You do not have permission to delete leads (LEADS_DELETE required).');
   }
 
   // Update local cache
@@ -2034,18 +2337,24 @@ export async function deleteLead(
 
 export async function createActivity(input: CreateActivityInput): Promise<LeadActivityRecord> {
   const userId = getEffectiveUserId();
-  if (!input.lead_id) {
-    throw new Error('Validation Error: lead_id is required for logging an activity.');
+  const targetLeadId = input.lead_id || '';
+  const targetClientId = input.client_id || '';
+  if (!targetLeadId && !targetClientId) {
+    throw new Error('Validation Error: lead_id or client_id is required for logging an activity.');
   }
 
   const now = new Date().toISOString();
   const generatedId = 'act_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
   const performedBy = input.performed_by || userId;
   const performedByName = input.performed_by_name || getUserDisplayName(performedBy);
+  const entityType: 'lead' | 'client' = targetClientId ? 'client' : 'lead';
 
   const activityData: LeadActivityRecord = {
     id: generatedId,
-    lead_id: input.lead_id,
+    lead_id: targetLeadId,
+    client_id: targetClientId,
+    entity_type: entityType,
+    client_name: input.client_name || '',
     activity_type: input.activity_type,
     outcome: input.outcome || '',
     description: input.description || input.notes || '',
@@ -2065,12 +2374,23 @@ export async function createActivity(input: CreateActivityInput): Promise<LeadAc
 
   // Denormalize company_name for instant display on recent activity feeds
   if (!activityData.metadata?.company_name) {
-    const localLead = getLocalLeads().find((l) => l.id === input.lead_id);
-    if (localLead?.company_name) {
-      activityData.metadata = {
-        ...activityData.metadata,
-        company_name: localLead.company_name,
-      };
+    if (targetClientId) {
+      const localClient = getLocalClients().find((c) => c.id === targetClientId);
+      if (localClient?.company_name) {
+        activityData.metadata = {
+          ...activityData.metadata,
+          company_name: localClient.company_name,
+        };
+        activityData.client_name = localClient.company_name;
+      }
+    } else if (targetLeadId) {
+      const localLead = getLocalLeads().find((l) => l.id === targetLeadId);
+      if (localLead?.company_name) {
+        activityData.metadata = {
+          ...activityData.metadata,
+          company_name: localLead.company_name,
+        };
+      }
     }
   }
 
@@ -2078,18 +2398,20 @@ export async function createActivity(input: CreateActivityInput): Promise<LeadAc
   if (input.next_followup && input.next_followup.scheduled_at) {
     try {
       const fuRecord = await createFollowUp({
-        lead_id: input.lead_id,
+        lead_id: targetLeadId || targetClientId,
         action: input.next_followup.action_type || 'Follow-up',
         scheduled_at: input.next_followup.scheduled_at,
         status: 'pending',
       });
       activityData.scheduled_followup_id = fuRecord.id;
 
-      // Update lead's next_action and next_followup_date
-      await updateLead(input.lead_id, {
-        next_action: `${input.next_followup.action_type || 'Follow-up'} on ${new Date(input.next_followup.scheduled_at).toLocaleDateString()}`,
-        next_followup_date: input.next_followup.scheduled_at,
-      });
+      // Update lead's next_action and next_followup_date if it's a lead
+      if (targetLeadId) {
+        await updateLead(targetLeadId, {
+          next_action: `${input.next_followup.action_type || 'Follow-up'} on ${new Date(input.next_followup.scheduled_at).toLocaleDateString()}`,
+          next_followup_date: input.next_followup.scheduled_at,
+        });
+      }
     } catch (fuErr) {
       console.warn('Attached follow-up creation notice:', fuErr);
     }
@@ -2098,21 +2420,23 @@ export async function createActivity(input: CreateActivityInput): Promise<LeadAc
   const acts = getLocalActivities();
   acts.unshift(activityData);
   setLocalActivities(acts);
-  notifyActivitiesChanged(input.lead_id);
+  notifyActivitiesChanged(targetLeadId || targetClientId);
 
   // Sync to Firestore in both locations
   try {
-    // 1. Subcollection in lead
-    const activitiesCol = collection(db, 'leads', input.lead_id, 'activities');
+    // 1. Subcollection in lead or client
+    const targetEntityCol = targetClientId
+      ? collection(db, 'clients', targetClientId, 'activities')
+      : collection(db, 'leads', targetLeadId, 'activities');
     const { id, ...data } = activityData;
-    const docRef = await addDoc(activitiesCol, data);
+    const docRef = await addDoc(targetEntityCol, data);
     if (docRef.id) {
       activityData.id = docRef.id;
       const updatedActs = getLocalActivities().map((a) =>
         a.id === generatedId ? activityData : a
       );
       setLocalActivities(updatedActs);
-      notifyActivitiesChanged(input.lead_id);
+      notifyActivitiesChanged(targetLeadId || targetClientId);
     }
   } catch (e) {
     console.warn('Firestore createActivity subcollection fallback notice:', e);
@@ -2255,13 +2579,13 @@ export function subscribeToUsers(
 }
 
 export function subscribeToActivities(
-  leadId: string,
+  targetId: string,
   onUpdate: (activities: LeadActivityRecord[]) => void,
   onError?: (err: Error) => void
 ): Unsubscribe {
   const filterAndEmit = (list: LeadActivityRecord[]) => {
     const filtered = list
-      .filter((a) => a.lead_id === leadId)
+      .filter((a) => a.lead_id === targetId || a.client_id === targetId)
       .sort((a, b) => {
         const timeA = new Date(a.activity_at || a.activity_date || a.created_at).getTime();
         const timeB = new Date(b.activity_at || b.activity_date || b.created_at).getTime();
@@ -2274,7 +2598,7 @@ export function subscribeToActivities(
   filterAndEmit(getLocalActivities());
 
   const handleCustomEvent = (e: any) => {
-    if (!e.detail || !e.detail.leadId || e.detail.leadId === leadId) {
+    if (!e.detail || !e.detail.leadId || e.detail.leadId === targetId) {
       filterAndEmit(getLocalActivities());
     }
   };
@@ -2286,7 +2610,10 @@ export function subscribeToActivities(
   let firestoreUnsub: Unsubscribe = () => {};
 
   try {
-    const activitiesCol = collection(db, 'leads', leadId, 'activities');
+    const isClient = targetId.startsWith('cli_') || getLocalClients().some((c) => c.id === targetId);
+    const activitiesCol = isClient
+      ? collection(db, 'clients', targetId, 'activities')
+      : collection(db, 'leads', targetId, 'activities');
     const q = query(activitiesCol, orderBy('created_at', 'desc'));
 
     firestoreUnsub = onSnapshot(
@@ -2297,8 +2624,8 @@ export function subscribeToActivities(
           fsActs.push({ id: docSnap.id, ...docSnap.data() } as LeadActivityRecord);
         });
 
-        // Merge with local items for this lead
-        const otherLocal = getLocalActivities().filter((a) => a.lead_id !== leadId);
+        // Merge with local items for this entity
+        const otherLocal = getLocalActivities().filter((a) => a.lead_id !== targetId && a.client_id !== targetId);
         const merged = [...fsActs, ...otherLocal];
         setLocalActivities(merged);
         filterAndEmit(merged);
@@ -4399,20 +4726,35 @@ export async function updateClient(
 }
 
 /**
- * Admin-only: Transfers Client portfolio ownership to another salesman.
+ * Transfers Client portfolio ownership to another salesman.
+ * Accessible to Admins, salesmen with CLIENTS_TRANSFER permission, or current client owner.
  * INVARIANT: Does NOT alter original Lead's assigned_to (preserves historical source lead purity).
+ * All activities, follow-ups, and notes remain attached to this Client without duplication.
  */
 export async function transferClientOwnership(input: TransferClientInput): Promise<void> {
   const client = await getClientById(input.client_id);
   if (!client) throw new Error('Client record not found.');
 
-  const currentRole = getEffectiveUserRole();
-  if (currentRole.toUpperCase() !== 'ADMIN') {
-    throw new Error('Unauthorized: Only Administrators can transfer client ownership.');
+  const actorId = getEffectiveUserId();
+  const actorName = getEffectiveUserName();
+  const actorProfile = await getUserProfile(actorId);
+  const currentRole = actorProfile?.role || getEffectiveUserRole();
+
+  const isOwner = client.owner_id === actorId;
+  const hasTransferPerm = hasPermission(actorProfile, 'CLIENTS_TRANSFER');
+  const isAdminOrSuper = currentRole === 'SUPER_ADMIN' || currentRole === 'ADMIN';
+
+  if (!isAdminOrSuper && !hasTransferPerm && !isOwner) {
+    throw new Error('Unauthorized: You do not have permission to transfer this client.');
   }
 
-  const adminId = getEffectiveUserId();
-  const adminName = getEffectiveUserName();
+  // Cross-tenant protection: Target representative must belong to the same company
+  const companyId = client.company_id || getEffectiveCompanyId() || DEFAULT_COMPANY_ID;
+  const targetProfile = await getUserProfile(input.new_owner_id);
+  if (targetProfile && targetProfile.company_id && targetProfile.company_id !== companyId) {
+    throw new Error('Cannot transfer client: Target representative belongs to a different company.');
+  }
+
   const previousOwnerId = client.owner_id;
   const previousOwnerName = client.owner_name || getUserDisplayName(previousOwnerId);
   const newOwnerName = input.new_owner_name || getUserDisplayName(input.new_owner_id);
@@ -4424,12 +4766,33 @@ export async function transferClientOwnership(input: TransferClientInput): Promi
     updated_at: now,
   };
 
-  // Local cache update
+  // 1. Local cache update
   const localList = getLocalClients();
   const updated = localList.map((c) => (c.id === input.client_id ? { ...c, ...updatePayload } : c));
   setLocalClients(updated);
 
-  // Firestore update
+  // 2. Transfer Record creation
+  const transferRecord: ClientTransferRecord = {
+    id: 'ctr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+    company_id: companyId,
+    client_id: input.client_id,
+    client_name: client.company_name,
+    from_user_id: previousOwnerId,
+    from_user_name: previousOwnerName,
+    to_user_id: input.new_owner_id,
+    to_user_name: newOwnerName,
+    transferred_by: actorId,
+    transferred_by_name: actorName,
+    transferred_at: now,
+    timestamp: now,
+    reason: input.reason || '',
+  };
+
+  // Cache in local client transfers
+  const localTransfers = getLocalClientTransfers();
+  setLocalClientTransfers([transferRecord, ...localTransfers]);
+
+  // 3. Firestore client doc update
   try {
     const docRef = doc(db, 'clients', input.client_id);
     await updateDoc(docRef, updatePayload);
@@ -4437,19 +4800,62 @@ export async function transferClientOwnership(input: TransferClientInput): Promi
     console.warn('Firestore transferClientOwnership fallback:', err);
   }
 
-  // Audit log: Administrator transferred client ownership
-  // NOTICE: Does NOT alter original Lead's assigned_to (preserves historical source lead)
+  // 4. Save transfer record in subcollection
+  try {
+    const transferCol = collection(db, 'clients', input.client_id, 'transfers');
+    const { id, ...data } = transferRecord;
+    await addDoc(transferCol, data);
+  } catch (e) {
+    console.warn('Firestore client subcollection transfer fallback notice:', e);
+  }
+
+  // 5. Save transfer record in root collection
+  try {
+    const rootCol = doc(db, 'client_transfers', transferRecord.id);
+    const { id, ...data } = transferRecord;
+    await setDoc(rootCol, data);
+  } catch (e) {
+    console.warn('Firestore root client_transfers fallback notice:', e);
+  }
+
+  // 6. Log activity on Client timeline
+  try {
+    await createActivity({
+      client_id: input.client_id,
+      client_name: client.company_name,
+      company_name: client.company_name,
+      activity_type: 'Transfer',
+      description: `Client account reassigned: ${previousOwnerName} → ${newOwnerName}${input.reason ? ` (${input.reason})` : ''}`,
+      notes: `Account handover executed by ${actorName} (${currentRole}). Reason: ${input.reason || 'Portfolio optimization'}. Note: Source lead closing representative remains preserved.`,
+      outcome: 'Transferred',
+      performed_by: actorId,
+      performed_by_name: actorName,
+      is_system_activity: true,
+      previous_value: previousOwnerName,
+      new_value: newOwnerName,
+      metadata: {
+        reason: input.reason || '',
+        previous_owner_id: previousOwnerId,
+        new_owner_id: input.new_owner_id,
+        transfer_id: transferRecord.id,
+      },
+    });
+  } catch (actErr) {
+    console.warn('Client transfer timeline activity notice:', actErr);
+  }
+
+  // 7. Audit log
   try {
     await createAuditLog({
       action: 'client_ownership_transferred',
       entity_type: 'Client',
       entity_id: input.client_id,
-      performed_by: adminId,
-      performed_by_name: adminName,
-      performed_by_role: 'ADMIN',
+      performed_by: actorId,
+      performed_by_name: actorName,
+      performed_by_role: currentRole as any,
       target_user_id: input.new_owner_id,
       target_user_name: newOwnerName,
-      description: `Administrator ${adminName} transferred ownership of Client "${client.company_name}" from ${previousOwnerName} to ${newOwnerName}. Reason: ${input.reason || 'Portfolio optimization'}. (Original lead historical record preserved).`,
+      description: `${actorName} transferred ownership of Client "${client.company_name}" from ${previousOwnerName} to ${newOwnerName}. Reason: ${input.reason || 'Portfolio transition'}. (Original lead historical record preserved).`,
       metadata: {
         client_id: input.client_id,
         source_lead_id: client.source_lead_id,
@@ -4464,18 +4870,374 @@ export async function transferClientOwnership(input: TransferClientInput): Promi
     console.warn('client_ownership_transferred audit log notice:', auditErr);
   }
 
-  // Notification to new owner
+  // 8. Notification to new owner
   try {
     await createNotification({
       recipient_id: input.new_owner_id,
-      title: 'Client Ownership Transferred',
-      message: `You are now the account owner of client "${client.company_name}". Assigned by Administrator ${adminName}.`,
+      title: 'Client Account Transferred to You',
+      message: `You are now the account owner of client "${client.company_name}". Transferred by ${actorName}.${input.reason ? ` Handover notes: ${input.reason}` : ''}`,
       type: 'general',
       lead_id: client.source_lead_id || undefined,
     });
   } catch (notifErr) {
     console.warn('transferClientOwnership notification notice:', notifErr);
   }
+}
+
+/**
+ * Validates and checks for client duplicates within the same company.
+ * Hard Duplicate: Normalized phone number matches an existing client in the same company.
+ * Soft Warnings: Matching company name or email.
+ */
+export function checkClientPotentialDuplicateSync(
+  input: { phone?: string; company_name?: string; email?: string },
+  companyId?: string,
+  excludeClientId?: string
+): { isHardDuplicate: boolean; hardDuplicateReason?: string; softWarnings: string[]; existingMatch?: ClientRecord } {
+  const targetCompanyId = companyId || getEffectiveCompanyId() || DEFAULT_COMPANY_ID;
+  const localClients = getLocalClients();
+  const normPhone = normalizePhone(input.phone);
+  const normEmail = normalizeEmail(input.email);
+  const normCompName = normalizeCompanyName(input.company_name);
+
+  let isHardDuplicate = false;
+  let hardDuplicateReason = '';
+  const softWarnings: string[] = [];
+  let existingMatch: ClientRecord | undefined;
+
+  for (const c of localClients) {
+    if (c.id === excludeClientId || c.record_status === 'merged') continue;
+    if (c.company_id && c.company_id !== targetCompanyId) continue;
+
+    // 1. Phone match - HARD DUPLICATE
+    if (normPhone && (c.normalized_phone === normPhone || phonesMatch(c.phone, input.phone))) {
+      isHardDuplicate = true;
+      existingMatch = c;
+      hardDuplicateReason = `Duplicate Protected: A client with this phone number already exists in your company ("${c.company_name}", owner: ${c.owner_name || 'Team member'}).`;
+      break;
+    }
+
+    // 2. Email match - SOFT WARNING
+    if (normEmail && c.email && normalizeEmail(c.email) === normEmail) {
+      softWarnings.push(`Same email address exists on client "${c.company_name}" (Owner: ${c.owner_name || 'Team member'}).`);
+    }
+
+    // 3. Company name match - SOFT WARNING
+    if (normCompName && c.company_name && normalizeCompanyName(c.company_name) === normCompName) {
+      softWarnings.push(`A client with an identical company name "${c.company_name}" already exists in your company.`);
+    }
+  }
+
+  return { isHardDuplicate, hardDuplicateReason, softWarnings, existingMatch };
+}
+
+/**
+ * Creates a direct Client/Customer account from a Salesman or Admin.
+ * Enforces company tenant isolation and hard duplicate rejection by normalized phone.
+ */
+export async function createClient(input: CreateClientInput): Promise<ClientRecord> {
+  const currentUserId = getEffectiveUserId();
+  const currentUserName = getEffectiveUserName();
+  const currentRole = getEffectiveUserRole();
+  const companyId = input.company_id || getEffectiveCompanyId() || DEFAULT_COMPANY_ID;
+
+  if (!input.company_name?.trim()) {
+    throw new Error('Client / Company Name is required.');
+  }
+  if (!input.phone?.trim()) {
+    throw new Error('Phone number is required for client account creation.');
+  }
+
+  const normalizedPhone = normalizePhone(input.phone);
+  if (!normalizedPhone || normalizedPhone.length < 7) {
+    throw new Error('Please enter a valid phone number (at least 7-8 digits).');
+  }
+
+  // 1. DUPLICATE CHECK WITHIN SAME COMPANY (LOCAL CACHE)
+  const dupCheck = checkClientPotentialDuplicateSync(
+    { phone: input.phone, company_name: input.company_name, email: input.email },
+    companyId
+  );
+  if (dupCheck.isHardDuplicate) {
+    throw new Error(dupCheck.hardDuplicateReason);
+  }
+
+  // 2. DUPLICATE CHECK WITHIN SAME COMPANY (FIRESTORE)
+  try {
+    const clientsRef = collection(db, 'clients');
+    const q = query(
+      clientsRef,
+      where('company_id', '==', companyId),
+      where('normalized_phone', '==', normalizedPhone)
+    );
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const matchDoc = snap.docs[0].data() as ClientRecord;
+      if (matchDoc.record_status !== 'merged') {
+        throw new Error(
+          `Duplicate Client Protected: A client with this phone number already exists in your company ("${matchDoc.company_name}", owner: ${matchDoc.owner_name || 'Team member'}).`
+        );
+      }
+    }
+  } catch (fsCheckErr: any) {
+    if (fsCheckErr.message && fsCheckErr.message.includes('Duplicate Client Protected')) {
+      throw fsCheckErr;
+    }
+    console.warn('Firestore duplicate check fallback:', fsCheckErr);
+  }
+
+  const clientId = 'cli_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+  const now = new Date().toISOString();
+  const assignedOwnerId = input.owner_id || currentUserId;
+  const ownerName =
+    input.owner_name ||
+    (assignedOwnerId === currentUserId ? currentUserName : getUserDisplayName(assignedOwnerId));
+
+  const clientData: ClientRecord = {
+    id: clientId,
+    company_id: companyId,
+    company_name: input.company_name.trim(),
+    contact_person: input.contact_person?.trim() || '',
+    phone: input.phone.trim(),
+    whatsapp: input.whatsapp?.trim() || '',
+    email: input.email?.trim() || '',
+    location: input.location?.trim() || input.address?.trim() || '',
+    address: input.address?.trim() || input.location?.trim() || '',
+    client_type: input.client_type || 'Direct Customer',
+    source: input.source || 'Direct Existing Customer',
+    source_lead_id: '',
+    owner_id: assignedOwnerId,
+    owner_name: ownerName,
+    status: input.status || 'Active',
+    notes: input.notes?.trim() || '',
+    created_by: currentUserId,
+    created_by_name: currentUserName,
+    created_at: now,
+    updated_at: now,
+    record_status: 'active',
+    normalized_phone: normalizedPhone,
+    normalized_whatsapp: normalizePhone(input.whatsapp),
+    normalized_email: normalizeEmail(input.email),
+    normalized_company_name: normalizeCompanyName(input.company_name),
+    tags: input.tags || [],
+  };
+
+  // Update local cache
+  const localClients = getLocalClients();
+  setLocalClients([clientData, ...localClients]);
+
+  // Sync to Firestore
+  try {
+    const docRef = doc(db, 'clients', clientId);
+    const { id, ...dataToSave } = clientData;
+    await setDoc(docRef, dataToSave);
+  } catch (fsErr) {
+    console.warn('Firestore createClient fallback:', fsErr);
+  }
+
+  // Initial timeline activity
+  try {
+    await createActivity({
+      client_id: clientId,
+      client_name: clientData.company_name,
+      company_name: clientData.company_name,
+      activity_type: 'Other',
+      description: `Client account created by ${currentUserName} and assigned to ${ownerName}`,
+      outcome: 'Account Created',
+      notes: input.notes ? `Initial notes: ${input.notes}` : 'Direct client account established in CRM.',
+      performed_by: currentUserId,
+      performed_by_name: currentUserName,
+      is_system_activity: true,
+    });
+  } catch (actErr) {
+    console.warn('createClient initial activity error:', actErr);
+  }
+
+  // Audit log
+  try {
+    await createAuditLog({
+      action: 'client_created',
+      entity_type: 'Client',
+      entity_id: clientId,
+      performed_by: currentUserId,
+      performed_by_name: currentUserName,
+      performed_by_role: currentRole as any,
+      target_user_id: assignedOwnerId,
+      target_user_name: ownerName,
+      description: `Client account "${clientData.company_name}" created by ${currentUserName} and assigned to ${ownerName}.`,
+      metadata: {
+        client_id: clientId,
+        company_name: clientData.company_name,
+        phone: clientData.phone,
+        owner_id: assignedOwnerId,
+        owner_name: ownerName,
+      },
+    });
+  } catch (auditErr) {
+    console.warn('createClient audit log error:', auditErr);
+  }
+
+  return clientData;
+}
+
+/**
+ * Subscribes to Client Transfer history records
+ */
+export function subscribeToClientTransfers(
+  onUpdate: (transfers: ClientTransferRecord[]) => void,
+  clientId?: string
+): Unsubscribe {
+  const companyId = getEffectiveCompanyId() || DEFAULT_COMPANY_ID;
+  const emitLocal = () => {
+    let list = getLocalClientTransfers();
+    if (companyId) {
+      list = list.filter((t) => !t.company_id || t.company_id === companyId);
+    }
+    if (clientId) {
+      list = list.filter((t) => t.client_id === clientId);
+    }
+    list.sort(
+      (a, b) =>
+        new Date(b.transferred_at || b.timestamp || 0).getTime() -
+        new Date(a.transferred_at || a.timestamp || 0).getTime()
+    );
+    onUpdate(list);
+  };
+
+  emitLocal();
+
+  const handleEvent = () => emitLocal();
+  if (typeof window !== 'undefined') {
+    window.addEventListener('crm_transfers_changed', handleEvent);
+  }
+
+  let firestoreUnsub: Unsubscribe = () => {};
+  try {
+    let q;
+    if (clientId) {
+      q = query(collection(db, 'clients', clientId, 'transfers'), orderBy('transferred_at', 'desc'));
+    } else {
+      q = query(
+        collection(db, 'client_transfers'),
+        where('company_id', '==', companyId),
+        orderBy('transferred_at', 'desc'),
+        limit(150)
+      );
+    }
+
+    firestoreUnsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const fsList: ClientTransferRecord[] = [];
+        snapshot.forEach((docSnap) => {
+          fsList.push({ id: docSnap.id, ...docSnap.data() } as ClientTransferRecord);
+        });
+        if (fsList.length > 0) {
+          const localList = getLocalClientTransfers();
+          const map = new Map<string, ClientTransferRecord>();
+          fsList.forEach((t) => map.set(t.id, t));
+          localList.forEach((t) => {
+            if (!map.has(t.id)) map.set(t.id, t);
+          });
+          const merged = Array.from(map.values());
+          setLocalClientTransfers(merged);
+          emitLocal();
+        }
+      },
+      (err) => {
+        console.warn('subscribeToClientTransfers fallback notice:', err);
+      }
+    );
+  } catch (err) {
+    console.warn('Firestore client transfers subscription notice:', err);
+  }
+
+  return () => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('crm_transfers_changed', handleEvent);
+    }
+    firestoreUnsub();
+  };
+}
+
+/**
+ * Subscribes to Lead Transfer history records
+ */
+export function subscribeToLeadTransfers(
+  onUpdate: (transfers: LeadTransferRecord[]) => void,
+  leadId?: string
+): Unsubscribe {
+  const companyId = getEffectiveCompanyId() || DEFAULT_COMPANY_ID;
+  const emitLocal = () => {
+    let list = getLocalLeadTransfers();
+    if (companyId) {
+      list = list.filter((t) => !t.company_id || t.company_id === companyId);
+    }
+    if (leadId) {
+      list = list.filter((t) => t.lead_id === leadId);
+    }
+    list.sort(
+      (a, b) =>
+        new Date(b.transferred_at || b.timestamp || 0).getTime() -
+        new Date(a.transferred_at || a.timestamp || 0).getTime()
+    );
+    onUpdate(list);
+  };
+
+  emitLocal();
+
+  const handleEvent = () => emitLocal();
+  if (typeof window !== 'undefined') {
+    window.addEventListener('crm_transfers_changed', handleEvent);
+  }
+
+  let firestoreUnsub: Unsubscribe = () => {};
+  try {
+    let q;
+    if (leadId) {
+      q = query(collection(db, 'leads', leadId, 'transfers'), orderBy('transferred_at', 'desc'));
+    } else {
+      q = query(
+        collection(db, 'lead_transfers'),
+        where('company_id', '==', companyId),
+        orderBy('transferred_at', 'desc'),
+        limit(150)
+      );
+    }
+
+    firestoreUnsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const fsList: LeadTransferRecord[] = [];
+        snapshot.forEach((docSnap) => {
+          fsList.push({ id: docSnap.id, ...docSnap.data() } as LeadTransferRecord);
+        });
+        if (fsList.length > 0) {
+          const localList = getLocalLeadTransfers();
+          const map = new Map<string, LeadTransferRecord>();
+          fsList.forEach((t) => map.set(t.id, t));
+          localList.forEach((t) => {
+            if (!map.has(t.id)) map.set(t.id, t);
+          });
+          const merged = Array.from(map.values());
+          setLocalLeadTransfers(merged);
+          emitLocal();
+        }
+      },
+      (err) => {
+        console.warn('subscribeToLeadTransfers fallback notice:', err);
+      }
+    );
+  } catch (err) {
+    console.warn('Firestore lead transfers subscription notice:', err);
+  }
+
+  return () => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('crm_transfers_changed', handleEvent);
+    }
+    firestoreUnsub();
+  };
 }
 
 // ----------------------------------------------------------------------
@@ -6056,7 +6818,7 @@ export function subscribeToImportJobs(callback: (jobs: any[]) => void): () => vo
 }
 
 // ----------------------------------------------------------------------
-// Phase X: ZaynOs Multi-Company SaaS Architecture & Management
+// Phase X: ZaynOps Multi-Company SaaS Architecture & Management
 // ----------------------------------------------------------------------
 
 export async function getCompanies(): Promise<CompanyRecord[]> {
@@ -6374,7 +7136,7 @@ export function subscribeToCompanies(
 
 export async function createCompanyUser(
   companyId: string,
-  input: { full_name: string; email: string; phone?: string; role?: 'ADMIN' | 'SALESMAN'; password?: string },
+  input: { full_name: string; email: string; phone?: string; role?: 'ADMIN' | 'SALESMAN'; password?: string; permissions?: SalesmanPermission[] },
   actor?: UserProfile
 ): Promise<UserProfile> {
   const actorId = actor?.id || getEffectiveUserId();
@@ -6415,6 +7177,10 @@ export async function createCompanyUser(
   const now = new Date().toISOString();
   const userId = authUid || 'usr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
 
+  const initialPermissions = targetRole === 'SALESMAN'
+    ? (Array.isArray(input.permissions) ? input.permissions : DEFAULT_SALESMAN_PERMISSIONS)
+    : undefined;
+
   const newUser: UserProfile = {
     id: userId,
     full_name: cleanName,
@@ -6425,6 +7191,7 @@ export async function createCompanyUser(
     is_active: true,
     created_at: now,
     updated_at: now,
+    ...(initialPermissions ? { permissions: initialPermissions } : {}),
   };
 
   // Local storage save
@@ -6464,6 +7231,7 @@ export async function createCompanyUser(
         user_id: userId,
         role: targetRole,
         email: cleanEmail,
+        permissions_count: initialPermissions?.length,
       },
     });
   } catch (e) {}
@@ -6474,7 +7242,7 @@ export async function createCompanyUser(
 export async function updateCompanySalesman(
   companyId: string,
   userId: string,
-  input: { full_name?: string; phone?: string },
+  input: { full_name?: string; phone?: string; permissions?: SalesmanPermission[] },
   actor?: UserProfile
 ): Promise<UserProfile> {
   const actorId = actor?.id || getEffectiveUserId();
@@ -6509,6 +7277,7 @@ export async function updateCompanySalesman(
     ...current,
     full_name: input.full_name?.trim() || current.full_name,
     phone: input.phone !== undefined ? input.phone.trim() : current.phone,
+    permissions: input.permissions !== undefined ? input.permissions : current.permissions,
     // Never allow changing company_id or role through this method
     company_id: current.company_id || companyId,
     role: current.role,
@@ -6522,6 +7291,16 @@ export async function updateCompanySalesman(
       let users: UserProfile[] = raw ? JSON.parse(raw) : [];
       users = users.map((u) => (u.id === userId ? updatedProfile : u));
       localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(users));
+
+      // Update active session if target is current logged in user
+      const sessionRaw = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
+      if (sessionRaw) {
+        const sess = JSON.parse(sessionRaw);
+        if (sess?.id === userId) {
+          localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(updatedProfile));
+        }
+      }
+
       window.dispatchEvent(new CustomEvent('crm_users_changed'));
     } catch (e) {}
   }
@@ -6529,11 +7308,15 @@ export async function updateCompanySalesman(
   // Update Firestore
   try {
     const userDocRef = doc(db, 'users', userId);
-    await updateDoc(userDocRef, {
+    const updatePayload: any = {
       full_name: updatedProfile.full_name,
       phone: updatedProfile.phone,
       updated_at: now,
-    });
+    };
+    if (input.permissions !== undefined) {
+      updatePayload.permissions = input.permissions;
+    }
+    await updateDoc(userDocRef, updatePayload);
   } catch (err) {
     console.warn('Firestore updateCompanySalesman fallback:', err);
   }
@@ -6555,6 +7338,104 @@ export async function updateCompanySalesman(
         company_id: companyId,
         user_id: userId,
         updated_fields: input,
+      },
+    });
+  } catch (e) {}
+
+  return updatedProfile;
+}
+
+export async function updateCompanySalesmanPermissions(
+  companyId: string,
+  userId: string,
+  newPermissions: SalesmanPermission[],
+  actor?: UserProfile
+): Promise<UserProfile> {
+  const actorId = actor?.id || getEffectiveUserId();
+  const actorName = actor?.full_name || getEffectiveUserName();
+  const actorRole = actor?.role || getEffectiveUserRole();
+  const actorCompany = actor?.company_id || getEffectiveCompanyId();
+
+  if (actorRole !== 'SUPER_ADMIN' && actorRole !== 'ADMIN') {
+    throw new Error('Unauthorized: Only Administrators can configure permissions.');
+  }
+
+  if (actorRole === 'ADMIN' && actorCompany !== companyId) {
+    throw new Error('Unauthorized: Company Admins can only configure permissions for team members in their own company.');
+  }
+
+  const current = await getUserProfile(userId);
+  if (!current) {
+    throw new Error('User not found.');
+  }
+
+  if (actorRole === 'ADMIN' && current.company_id && current.company_id !== companyId) {
+    throw new Error('Unauthorized: Cannot modify permissions of users belonging to another company.');
+  }
+
+  if (actorRole === 'ADMIN' && (current.role === 'SUPER_ADMIN' || current.role === 'ADMIN')) {
+    throw new Error('Unauthorized: Company Admins can only configure permissions for Salesmen.');
+  }
+
+  const oldPermissions = current.permissions || DEFAULT_SALESMAN_PERMISSIONS;
+  const now = new Date().toISOString();
+
+  const updatedProfile: UserProfile = {
+    ...current,
+    permissions: newPermissions,
+    updated_at: now,
+  };
+
+  // Update local storage
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
+      let users: UserProfile[] = raw ? JSON.parse(raw) : [];
+      users = users.map((u) => (u.id === userId ? updatedProfile : u));
+      localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(users));
+
+      // Update active session if this is the active user
+      const sessionRaw = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
+      if (sessionRaw) {
+        const sess = JSON.parse(sessionRaw);
+        if (sess?.id === userId) {
+          localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(updatedProfile));
+        }
+      }
+
+      window.dispatchEvent(new CustomEvent('crm_users_changed'));
+    } catch (e) {}
+  }
+
+  // Update Firestore
+  try {
+    const userDocRef = doc(db, 'users', userId);
+    await updateDoc(userDocRef, {
+      permissions: newPermissions,
+      updated_at: now,
+    });
+  } catch (err) {
+    console.warn('Firestore updateCompanySalesmanPermissions fallback:', err);
+  }
+
+  // Record audit log
+  try {
+    await createAuditLog({
+      action: 'permissions_updated' as any,
+      entity_type: 'User',
+      entity_id: userId,
+      company_id: companyId,
+      performed_by: actorId,
+      performed_by_name: actorName,
+      performed_by_role: actorRole as any,
+      target_user_id: userId,
+      target_user_name: updatedProfile.full_name,
+      description: `Company Administrator ${actorName} updated permissions for Salesman ${updatedProfile.full_name}. Configured ${newPermissions.length} permissions.`,
+      metadata: {
+        company_id: companyId,
+        user_id: userId,
+        old_permissions: oldPermissions,
+        new_permissions: newPermissions,
       },
     });
   } catch (e) {}
@@ -6805,6 +7686,13 @@ export async function ensureMultiTenantMigration(): Promise<void> {
       { merge: true }
     );
   } catch (e) {}
+
+  // 6. Automatically verify and repair company admin roles
+  try {
+    await repairCompanyAdminAccounts();
+  } catch (e) {
+    console.warn('repairCompanyAdminAccounts migration error:', e);
+  }
 }
 
 

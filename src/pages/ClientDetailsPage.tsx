@@ -46,6 +46,7 @@ import {
   CompleteFollowUpInput,
   RescheduleFollowUpInput,
   DuplicateMatchCandidate,
+  ClientTransferRecord,
 } from '../types/database';
 import {
   subscribeToSingleClient,
@@ -67,6 +68,7 @@ import {
   getClients,
   getLocalNotDuplicates,
   markAsNotDuplicate,
+  subscribeToClientTransfers,
 } from '../lib/dal';
 import { findPotentialMatchesForClientInput } from '../lib/dataQuality';
 import { RecordMergeModal } from '../components/data-quality/RecordMergeModal';
@@ -88,14 +90,14 @@ interface ClientDetailsPageProps {
   onNavigateToLead: (leadId: string) => void;
 }
 
-type ClientTab = 'communication' | 'timeline' | 'followups' | 'opportunities' | 'profile';
+type ClientTab = 'communication' | 'timeline' | 'followups' | 'opportunities' | 'transfers' | 'profile';
 
 export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
   clientId,
   onBack,
   onNavigateToLead,
 }) => {
-  const { userProfile, currentUser, isAdmin } = useAuth();
+  const { userProfile, currentUser, isAdmin, isSuperAdmin, hasPermission } = useAuth();
 
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [sourceLead, setSourceLead] = useState<LeadRecord | null>(null);
@@ -103,6 +105,9 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
   const [activities, setActivities] = useState<LeadActivityRecord[]>([]);
   const [followups, setFollowups] = useState<FollowUpRecord[]>([]);
   const [usersList, setUsersList] = useState<UserProfile[]>([]);
+  const [clientTransfers, setClientTransfers] = useState<ClientTransferRecord[]>([]);
+
+  const canTransfer = !isSuperAdmin && (isAdmin || hasPermission('CLIENTS_TRANSFER') || client?.owner_id === (userProfile?.id || currentUser?.uid));
 
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingActivities, setLoadingActivities] = useState<boolean>(true);
@@ -228,16 +233,17 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
     return client.owner_id === currentId;
   }, [isAdmin, client, userProfile?.id, currentUser?.uid]);
 
-  // Subscribe to activities for this client (via source lead id and client metadata)
+  // Subscribe to activities for this client (via source lead id or direct client id)
   useEffect(() => {
-    if (!client?.source_lead_id) {
+    const targetId = client?.source_lead_id || client?.id;
+    if (!targetId) {
       setLoadingActivities(false);
       return;
     }
 
     setLoadingActivities(true);
     const unsub = subscribeToActivities(
-      client.source_lead_id,
+      targetId,
       (acts) => {
         setActivities(acts);
         setLoadingActivities(false);
@@ -249,19 +255,20 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
     );
 
     return () => unsub();
-  }, [client?.source_lead_id]);
+  }, [client?.id, client?.source_lead_id]);
 
   // Subscribe to follow-ups for this client
   useEffect(() => {
-    if (!client?.source_lead_id) return;
+    if (!client?.id) return;
+    const targetLeadId = client.source_lead_id || client.id;
 
     const unsub = subscribeToFollowUps(
       (allFollowups) => {
-        // Filter follow-ups belonging to the source lead or bearing the client's company name
+        // Filter follow-ups belonging to the source lead, client id or bearing the client's company name
         const clientFollowUps = allFollowups.filter(
           (f) =>
-            f.lead_id === client.source_lead_id ||
-            f.company_name?.toLowerCase() === client.company_name?.toLowerCase()
+            (f.lead_id && (f.lead_id === targetLeadId || f.lead_id === client.id || f.lead_id === client.source_lead_id)) ||
+            (f.company_name && client.company_name && f.company_name.toLowerCase() === client.company_name.toLowerCase())
         );
         setFollowups(clientFollowUps);
       },
@@ -269,7 +276,16 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
     );
 
     return () => unsub();
-  }, [client?.source_lead_id, client?.company_name, userProfile?.role]);
+  }, [client?.id, client?.source_lead_id, client?.company_name, userProfile?.role]);
+
+  // Subscribe to client ownership transfers
+  useEffect(() => {
+    if (!clientId) return;
+    const unsub = subscribeToClientTransfers((records) => {
+      setClientTransfers(records);
+    }, clientId);
+    return () => unsub();
+  }, [clientId]);
 
   // Repeat Opportunities derived from leads where source_client_id === client.id
   const repeatOpportunities = useMemo(() => {
@@ -550,10 +566,11 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
             <span>Schedule Follow-up</span>
           </button>
 
-          {/* Transfer Ownership (Admin Only) */}
-          {isAdmin && (
+          {/* Transfer Ownership */}
+          {canTransfer && (
             <button
               type="button"
+              id="client-transfer-ownership-btn"
               onClick={() => setIsTransferModalOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition cursor-pointer"
             >

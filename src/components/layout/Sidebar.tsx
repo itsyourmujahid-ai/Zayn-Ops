@@ -22,6 +22,7 @@ import {
   ShieldAlert,
   X,
   UserCheck,
+  User,
 } from 'lucide-react';
 import { NavigationView } from '../../types/crm';
 import { useAuth } from '../../context/AuthContext';
@@ -66,22 +67,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileDrawer,
   onCloseDrawer,
 }) => {
-  const { currentUser, userProfile, isSuperAdmin, currentCompany, signOut } = useAuth();
+  const { currentUser, userProfile, isSuperAdmin, isAdmin, hasPermission, currentCompany, signOut } = useAuth();
+  const canCreateLead = !isSuperAdmin && (isAdmin || hasPermission('LEADS_CREATE'));
+  const canViewReports = !isSuperAdmin && (isAdmin || hasPermission('REPORTS_VIEW'));
+  const canViewSegments = !isSuperAdmin && (isAdmin || hasPermission('SEGMENTS_VIEW'));
+  const canViewClients = !isSuperAdmin && (isAdmin || hasPermission('CLIENTS_VIEW'));
+
   const { themeConfig } = useTheme();
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [duplicateCount, setDuplicateCount] = useState<number>(0);
 
   useEffect(() => {
-    if (!currentUser?.uid) return;
+    if (isSuperAdmin || !currentUser?.uid) return;
     const unsub = subscribeToUserNotifications(currentUser.uid, (list) => {
       const unread = list.filter((n) => !n.is_read).length;
       setUnreadCount(unread);
     });
     return () => unsub();
-  }, [currentUser?.uid]);
+  }, [currentUser?.uid, isSuperAdmin]);
 
-  // Track potential duplicate count for Admin badge
+  // Track potential duplicate count for Admin badge (CRM users only)
   useEffect(() => {
+    if (isSuperAdmin) return;
     let localLeads: LeadRecord[] = [];
     let localClients: ClientRecord[] = [];
     let localNotDups: NotDuplicateRecord[] = [];
@@ -114,83 +121,85 @@ export const Sidebar: React.FC<SidebarProps> = ({
       unsubC();
       unsubND();
     };
-  }, [userProfile?.role]);
+  }, [userProfile?.role, isSuperAdmin]);
 
-  const navSections: NavSection[] = [
-    {
-      title: 'Core Pipeline',
-      items: [
-        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-        { id: 'leads', label: 'Leads', icon: Users },
-        { id: 'pipeline', label: 'Sales Pipeline', icon: Kanban },
-        { id: 'followups', label: 'Follow-ups', icon: CalendarClock },
-        { id: 'calendar', label: 'Sales Calendar', icon: Calendar },
-        { id: 'clients', label: 'Clients', icon: Building2 },
-      ],
-    },
-    {
-      title: 'Intelligence',
-      items: [
-        { id: 'search', label: 'Global Search', icon: Search },
-        { id: 'segments', label: 'Segments & Tags', icon: Tag },
-        { id: 'reports', label: 'Reports & KPIs', icon: BarChart3 },
+  const navSections: NavSection[] = isSuperAdmin
+    ? [
         {
-          id: 'notifications',
-          label: 'Notifications',
-          icon: Bell,
-          badge: unreadCount > 0 ? unreadCount : undefined,
+          title: 'Platform Control Plane',
+          items: [
+            {
+              id: 'super-admin' as NavigationView,
+              label: 'Platform Console',
+              icon: ShieldAlert,
+            },
+          ],
         },
-      ],
-    },
-    ...(userProfile?.role === 'ADMIN' || isSuperAdmin
-      ? [
-          {
-            title: 'Company Administration',
-            items: [
+      ]
+    : [
+        {
+          title: 'Core Pipeline',
+          items: [
+            { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+            { id: 'leads', label: 'Leads', icon: Users },
+            { id: 'pipeline', label: 'Sales Pipeline', icon: Kanban },
+            { id: 'followups', label: 'Follow-ups', icon: CalendarClock },
+            { id: 'calendar', label: 'Sales Calendar', icon: Calendar },
+            ...(canViewClients ? [{ id: 'clients' as NavigationView, label: 'Clients', icon: Building2 }] : []),
+          ],
+        },
+        {
+          title: 'Intelligence',
+          items: [
+            { id: 'search', label: 'Global Search', icon: Search },
+            ...(canViewSegments ? [{ id: 'segments' as NavigationView, label: 'Segments & Tags', icon: Tag }] : []),
+            ...(canViewReports ? [{ id: 'reports' as NavigationView, label: 'Reports & KPIs', icon: BarChart3 }] : []),
+            {
+              id: 'notifications',
+              label: 'Notifications',
+              icon: Bell,
+              badge: unreadCount > 0 ? unreadCount : undefined,
+            },
+          ],
+        },
+        ...(userProfile?.role === 'ADMIN'
+          ? [
               {
-                id: 'team' as NavigationView,
-                label: 'Team',
-                icon: UserCheck,
+                title: 'Company Administration',
+                items: [
+                  {
+                    id: 'team' as NavigationView,
+                    label: 'Team',
+                    icon: UserCheck,
+                  },
+                  {
+                    id: 'data-quality' as NavigationView,
+                    label: 'Data Quality',
+                    icon: GitMerge,
+                    badge: duplicateCount > 0 ? duplicateCount : undefined,
+                  },
+                  {
+                    id: 'data-management' as NavigationView,
+                    label: 'Data Management',
+                    icon: ArrowDownUp,
+                  },
+                  {
+                    id: 'audit' as NavigationView,
+                    label: 'Audit Trail',
+                    icon: ShieldCheck,
+                  },
+                ],
               },
-              {
-                id: 'data-quality' as NavigationView,
-                label: 'Data Quality',
-                icon: GitMerge,
-                badge: duplicateCount > 0 ? duplicateCount : undefined,
-              },
-              {
-                id: 'data-management' as NavigationView,
-                label: 'Data Management',
-                icon: ArrowDownUp,
-              },
-              {
-                id: 'audit' as NavigationView,
-                label: 'Audit Trail',
-                icon: ShieldCheck,
-              },
-            ],
-          },
-        ]
-      : []),
-    ...(isSuperAdmin
-      ? [
-          {
-            title: 'SaaS Platform',
-            items: [
-              {
-                id: 'super-admin' as NavigationView,
-                label: 'Super Admin Panel',
-                icon: ShieldAlert,
-              },
-            ],
-          },
-        ]
-      : []),
-    {
-      title: 'System',
-      items: [{ id: 'settings', label: 'Settings', icon: Settings }],
-    },
-  ];
+            ]
+          : []),
+        {
+          title: 'System & Account',
+          items: [
+            { id: 'profile', label: 'My Profile & Target', icon: User },
+            { id: 'settings', label: 'Settings', icon: Settings },
+          ],
+        },
+      ];
 
   return (
     <aside
@@ -201,14 +210,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           : 'hidden w-64 flex-col border-r border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-main)] md:flex md:h-screen md:sticky md:top-0 shadow-md transition-colors duration-200 z-20'
       }
     >
-      {/* ZaynOs App Branding */}
+      {/* ZaynOps App Branding */}
       <div className="flex h-[72px] items-center justify-between border-b border-[var(--border-color)] px-5">
         <div className="flex items-center gap-3">
-          <ZaynLogo size={36} rounded="rounded-lg" className="shadow-xs border border-[var(--border-color)]" />
+          <ZaynLogo size={36} className="shrink-0" />
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-base font-bold tracking-tight text-[var(--text-main)]">
-                ZaynOs
+                ZaynOps
               </span>
               <span
                 className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider"
@@ -221,7 +230,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </span>
             </div>
             <div className="text-[11px] font-medium text-[var(--text-muted)] flex items-center gap-1">
-              <span className="truncate max-w-[130px]" title={currentCompany?.name || 'ZaynOs Suite'}>
+              <span className="truncate max-w-[130px]" title={currentCompany?.name || 'ZaynOps Suite'}>
                 {isSuperAdmin ? 'Global SaaS Root' : (currentCompany?.name || 'Enterprise Suite')}
               </span>
             </div>
@@ -244,20 +253,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Primary CTA: + Add Lead */}
-      <div className="p-4">
-        <button
-          id="sidebar-add-lead-btn"
-          type="button"
-          onClick={() => {
-            onOpenAddLead();
-            if (isMobileDrawer && onCloseDrawer) onCloseDrawer();
-          }}
-          className="zaynos-btn-primary w-full text-xs uppercase tracking-wider py-2.5 shadow-sm active:scale-98"
-        >
-          <Plus className="h-4 w-4" />
-          <span>New Lead</span>
-        </button>
-      </div>
+      {canCreateLead && (
+        <div className="p-4">
+          <button
+            id="sidebar-add-lead-btn"
+            type="button"
+            onClick={() => {
+              onOpenAddLead();
+              if (isMobileDrawer && onCloseDrawer) onCloseDrawer();
+            }}
+            className="zaynos-btn-primary w-full text-xs uppercase tracking-wider py-2.5 shadow-sm active:scale-98"
+          >
+            <Plus className="h-4 w-4" />
+            <span>New Lead</span>
+          </button>
+        </div>
+      )}
 
       {/* Nav Sections */}
       <nav className="flex-1 space-y-4 px-3 py-2 overflow-y-auto">
@@ -346,7 +357,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* User Card */}
         <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center gap-2 min-w-0">
+          <button
+            type="button"
+            onClick={() => {
+              onSelectView('profile');
+              if (isMobileDrawer && onCloseDrawer) onCloseDrawer();
+            }}
+            className="flex items-center gap-2 min-w-0 text-left hover:opacity-80 transition cursor-pointer flex-1"
+            title="View My Profile & Targets"
+          >
             <div
               className="flex h-8 w-8 items-center justify-center rounded-full font-bold text-xs shrink-0 border"
               style={{
@@ -357,7 +376,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               {userProfile?.full_name?.charAt(0).toUpperCase() || 'U'}
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="text-xs font-semibold text-[var(--text-main)] truncate leading-tight">
                 {userProfile?.full_name || 'CRM User'}
               </div>
@@ -376,7 +395,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </span>
               </div>
             </div>
-          </div>
+          </button>
 
           <button
             id="sidebar-logout-btn"

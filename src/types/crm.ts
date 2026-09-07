@@ -130,12 +130,14 @@ export type NavigationView =
   | 'reports'
   | 'team'
   | 'notifications'
+  | 'communication-hub'
   | 'audit'
   | 'data-quality'
   | 'data-management'
   | 'settings'
   | 'search'
-  | 'super-admin';
+  | 'super-admin'
+  | 'profile';
 
 export interface LeadFilterState {
   searchQuery: string;

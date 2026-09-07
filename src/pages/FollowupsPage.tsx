@@ -61,7 +61,10 @@ export const FollowupsPage: React.FC<FollowupsPageProps> = ({
   initialTab,
   initialSalesman,
 }) => {
-  const { userProfile, isAdmin } = useAuth();
+  const { userProfile, isAdmin, hasPermission } = useAuth();
+  const canCreateFollowUp = isAdmin || hasPermission('FOLLOWUPS_CREATE');
+  const canEditFollowUp = isAdmin || hasPermission('FOLLOWUPS_EDIT');
+
   const [followups, setFollowups] = useState<FollowUpRecord[]>([]);
   const [leads, setLeads] = useState<LeadRecord[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -99,14 +102,17 @@ export const FollowupsPage: React.FC<FollowupsPageProps> = ({
       (err) => {
         console.warn('Followups subscription error:', err);
         setLoading(false);
-      }
+      },
+      userProfile?.id
     );
 
     const unsubLeads = subscribeToLeads(
       (updatedLeads) => {
         setLeads(updatedLeads);
       },
-      userProfile?.role
+      userProfile?.role,
+      undefined,
+      userProfile?.id
     );
 
     getAllUsers().then((u) => setUsers(u));
@@ -276,15 +282,17 @@ export const FollowupsPage: React.FC<FollowupsPageProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            id="btn-schedule-new-followup"
-            type="button"
-            onClick={() => setIsScheduleModalOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 transition cursor-pointer"
-          >
-            <CalendarPlus className="h-4 w-4" />
-            <span>Schedule Follow-up</span>
-          </button>
+          {canCreateFollowUp && (
+            <button
+              id="btn-schedule-new-followup"
+              type="button"
+              onClick={() => setIsScheduleModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 transition cursor-pointer"
+            >
+              <CalendarPlus className="h-4 w-4" />
+              <span>Schedule Follow-up</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -646,7 +654,7 @@ export const FollowupsPage: React.FC<FollowupsPageProps> = ({
                     )}
 
                     {/* Pending Action Buttons */}
-                    {fu.status === 'pending' && (
+                    {fu.status === 'pending' && canEditFollowUp && (
                       <>
                         <button
                           id={`btn-complete-followup-${fu.id}`}

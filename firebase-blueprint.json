@@ -8,7 +8,8 @@
         "id": { "type": "string" },
         "full_name": { "type": "string" },
         "email": { "type": "string", "format": "email" },
-        "role": { "type": "string", "enum": ["ADMIN", "SALESMAN", "admin", "sales_rep"] },
+        "role": { "type": "string", "enum": ["ADMIN", "SALESMAN", "SUPER_ADMIN", "CUSTOMER", "admin", "sales_rep"] },
+        "permissions": { "type": "array", "description": "Granular CRM permissions for Salesman access control" },
         "is_active": { "type": "boolean" },
         "created_at": { "type": "string", "format": "date-time" },
         "updated_at": { "type": "string", "format": "date-time" }
@@ -245,9 +246,30 @@
         "duplicate_action": { "type": "string", "enum": ["skip", "import_anyway", "update_existing"] }
       },
       "required": ["id", "import_type", "file_name", "initiated_by", "started_at", "status"]
+    },
+    "Company": {
+      "title": "Company Organization",
+      "description": "Multi-tenant company organization profile managed by Super Admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "code": { "type": "string" },
+        "status": { "type": "string", "enum": ["ACTIVE", "INACTIVE", "SUSPENDED"] },
+        "contact_email": { "type": "string" },
+        "user_limit": { "type": "number" },
+        "lead_quota": { "type": "number" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "status"]
     }
   },
   "firestore": {
+    "/companies/{companyId}": {
+      "schema": "Company",
+      "description": "Multi-tenant company organizations managed by Super Admin"
+    },
     "/import_jobs/{jobId}": {
       "schema": "ImportJob",
       "description": "Historical records of batch CSV and Excel import jobs executed by administrators"

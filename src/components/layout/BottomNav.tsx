@@ -4,10 +4,12 @@ import {
   Users,
   Building2,
   CalendarClock,
+  Calendar,
   Plus,
   Menu,
 } from 'lucide-react';
 import { NavigationView } from '../../types/crm';
+import { useAuth } from '../../context/AuthContext';
 
 interface BottomNavProps {
   currentView: NavigationView;
@@ -22,6 +24,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   onOpenAddLead,
   onToggleMobileMenu,
 }) => {
+  const { isAdmin, hasPermission } = useAuth();
+  const canCreateLead = isAdmin || hasPermission('LEADS_CREATE');
+
   const isOtherView = ![
     'dashboard',
     'leads',
@@ -65,21 +70,38 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         <span className="text-[10px]">Leads</span>
       </button>
 
-      {/* Center + Add Lead Button */}
-      <button
-        id="mobile-nav-add-lead"
-        type="button"
-        onClick={onOpenAddLead}
-        className="-mt-5 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition active:scale-95 cursor-pointer"
-        style={{
-          backgroundColor: 'var(--color-primary)',
-          color: 'var(--text-inverse)',
-          boxShadow: '0 4px 14px var(--shadow-color)',
-        }}
-        aria-label="Add Lead"
-      >
-        <Plus className="h-6 w-6 stroke-[2.5]" />
-      </button>
+      {/* Center Action: + Add Lead if permitted, else Sales Calendar */}
+      {canCreateLead ? (
+        <button
+          id="mobile-nav-add-lead"
+          type="button"
+          onClick={onOpenAddLead}
+          className="-mt-5 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition active:scale-95 cursor-pointer"
+          style={{
+            backgroundColor: 'var(--color-primary)',
+            color: 'var(--text-inverse)',
+            boxShadow: '0 4px 14px var(--shadow-color)',
+          }}
+          aria-label="Add Lead"
+        >
+          <Plus className="h-6 w-6 stroke-[2.5]" />
+        </button>
+      ) : (
+        <button
+          id="mobile-nav-calendar"
+          type="button"
+          onClick={() => onSelectView('calendar')}
+          className="flex min-h-[44px] min-w-[56px] flex-col items-center justify-center gap-1 px-1 text-xs transition cursor-pointer"
+          style={{
+            color: currentView === 'calendar' ? 'var(--color-primary)' : 'var(--text-secondary)',
+            fontWeight: currentView === 'calendar' ? 700 : 500,
+          }}
+          aria-label="Calendar"
+        >
+          <Calendar className="h-5 w-5" />
+          <span className="text-[10px]">Calendar</span>
+        </button>
+      )}
 
       {/* Follow-ups */}
       <button

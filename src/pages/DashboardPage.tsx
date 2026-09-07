@@ -38,7 +38,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   onOpenAddLead,
   onSelectLead = () => {},
 }) => {
-  const { userProfile, isAdmin } = useAuth();
+  const { userProfile, isAdmin, isSalesman } = useAuth();
 
   // Core Data States
   const [leads, setLeads] = useState<LeadRecord[]>([]);
@@ -76,7 +76,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       (err) => {
         console.warn('Dashboard leads subscription fallback:', err);
         if (isMounted) setLoading(false);
-      }
+      },
+      userId
     );
 
     // 2. Follow-ups Subscription
@@ -191,9 +192,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     );
   }
 
+  const showAdminDashboard = isAdmin || userProfile?.role === 'ADMIN';
+  const showSalesmanDashboard = isSalesman || userProfile?.role === 'SALESMAN';
+
   return (
     <>
-      {isAdmin ? (
+      {showAdminDashboard ? (
         <AdminDashboard
           leads={leads}
           followups={followups}
@@ -207,7 +211,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           onOpenRescheduleFollowUp={(fu) => setReschedulingFollowUp(fu)}
           onSelectView={onSelectView}
         />
-      ) : userProfile ? (
+      ) : showSalesmanDashboard && userProfile ? (
         <SalesmanDashboard
           userProfile={userProfile}
           leads={leads}

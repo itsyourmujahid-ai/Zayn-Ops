@@ -68,7 +68,7 @@ export type FollowUpActionType =
   | 'Payment Follow-up'
   | 'Other';
 
-export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'SALESMAN' | 'admin' | 'sales_rep';
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'SALESMAN' | 'CUSTOMER' | 'admin' | 'sales_rep' | 'customer';
 
 export type CompanyStatus = 'ACTIVE' | 'INACTIVE';
 
@@ -82,6 +82,7 @@ export interface CompanyRecord {
   code?: string;
   email?: string;
   contact_email?: string;
+  contact_person?: string;
   phone?: string;
   contact_phone?: string;
   industry?: string;
@@ -129,6 +130,232 @@ export interface CreateCompanyInput {
 export type UpdateCompanyInput = Partial<CreateCompanyInput>;
 
 /**
+ * Granular permissions configurable by Company Admin for Salesmen
+ */
+export type SalesmanPermission =
+  | 'LEADS_VIEW'
+  | 'LEADS_CREATE'
+  | 'LEADS_EDIT'
+  | 'LEADS_ASSIGN'
+  | 'LEADS_TRANSFER'
+  | 'LEADS_DELETE'
+  | 'CLIENTS_VIEW'
+  | 'CLIENTS_CREATE'
+  | 'CLIENTS_EDIT'
+  | 'CLIENTS_TRANSFER'
+  | 'ACTIVITIES_VIEW'
+  | 'ACTIVITIES_CREATE'
+  | 'COMMUNICATIONS_VIEW'
+  | 'COMMUNICATIONS_CREATE'
+  | 'TRANSFER_HISTORY_VIEW'
+  | 'FOLLOWUPS_VIEW'
+  | 'FOLLOWUPS_CREATE'
+  | 'FOLLOWUPS_EDIT'
+  | 'CALENDAR_VIEW'
+  | 'REPORTS_VIEW'
+  | 'TARGETS_VIEW'
+  | 'TAGS_VIEW'
+  | 'TAGS_MANAGE'
+  | 'NOTIFICATIONS_VIEW'
+  | 'ATTACHMENTS_VIEW'
+  | 'ATTACHMENTS_UPLOAD'
+  | 'IMPORT_VIEW'
+  | 'IMPORT_CREATE'
+  | 'EXPORT_DATA';
+
+export interface PermissionDefinition {
+  key: SalesmanPermission;
+  label: string;
+  description: string;
+}
+
+export interface PermissionGroup {
+  id: string;
+  title: string;
+  description?: string;
+  permissions: PermissionDefinition[];
+}
+
+export const PERMISSION_GROUPS: PermissionGroup[] = [
+  {
+    id: 'leads',
+    title: 'Leads Management',
+    description: 'Control access to prospective customer leads & deals',
+    permissions: [
+      { key: 'LEADS_VIEW', label: 'View Leads', description: 'Access leads directory and pipeline stages' },
+      { key: 'LEADS_CREATE', label: 'Create Leads', description: 'Add new leads manually or via quick action' },
+      { key: 'LEADS_EDIT', label: 'Edit Leads', description: 'Update lead details, priority, and stages' },
+      { key: 'LEADS_ASSIGN', label: 'Assign Leads', description: 'Reassign leads to other team members' },
+      { key: 'LEADS_TRANSFER', label: 'Transfer Leads', description: 'Handover or transfer leads to another representative' },
+      { key: 'LEADS_DELETE', label: 'Delete Leads', description: 'Permanently remove lead records' },
+    ],
+  },
+  {
+    id: 'clients',
+    title: 'Clients Management',
+    description: 'Manage won accounts and client relationship records',
+    permissions: [
+      { key: 'CLIENTS_VIEW', label: 'View Clients', description: 'Access clients directory and client details' },
+      { key: 'CLIENTS_CREATE', label: 'Create Clients', description: 'Add new clients or convert leads' },
+      { key: 'CLIENTS_EDIT', label: 'Edit Clients', description: 'Modify client records and status' },
+      { key: 'CLIENTS_TRANSFER', label: 'Transfer Clients', description: 'Transfer client portfolio to another representative' },
+    ],
+  },
+  {
+    id: 'activities',
+    title: 'Activities & Communications Hub',
+    description: 'Log and review communications and client interactions',
+    permissions: [
+      { key: 'ACTIVITIES_VIEW', label: 'View Activities', description: 'See interaction timelines and call logs' },
+      { key: 'ACTIVITIES_CREATE', label: 'Log Activities', description: 'Log phone calls, meetings, notes, and emails' },
+      { key: 'COMMUNICATIONS_VIEW', label: 'View Communications Hub', description: 'Access company communication center' },
+      { key: 'COMMUNICATIONS_CREATE', label: 'Log Communications', description: 'Record team customer communications' },
+      { key: 'TRANSFER_HISTORY_VIEW', label: 'View Transfer History', description: 'Review audit logs of lead and client reassignments' },
+    ],
+  },
+  {
+    id: 'followups',
+    title: 'Follow-ups & Tasks',
+    description: 'Schedule and manage customer follow-up actions',
+    permissions: [
+      { key: 'FOLLOWUPS_VIEW', label: 'View Follow-ups', description: 'View scheduled follow-ups and action queues' },
+      { key: 'FOLLOWUPS_CREATE', label: 'Create Follow-ups', description: 'Schedule new follow-ups, calls, and site visits' },
+      { key: 'FOLLOWUPS_EDIT', label: 'Manage Follow-ups', description: 'Complete, reschedule, or edit follow-up tasks' },
+    ],
+  },
+  {
+    id: 'calendar',
+    title: 'Sales Calendar',
+    description: 'Interactive visual calendar of scheduled meetings & tasks',
+    permissions: [
+      { key: 'CALENDAR_VIEW', label: 'View Calendar', description: 'Access interactive schedule and date planner' },
+    ],
+  },
+  {
+    id: 'reports',
+    title: 'Reports & Analytics',
+    description: 'Performance metrics, win/loss ratios, and team KPIs',
+    permissions: [
+      { key: 'REPORTS_VIEW', label: 'View Reports & KPIs', description: 'Access performance dashboards and analytics' },
+    ],
+  },
+  {
+    id: 'targets',
+    title: 'Sales Targets',
+    description: 'Personal and team sales revenue targets',
+    permissions: [
+      { key: 'TARGETS_VIEW', label: 'View Targets', description: 'View assigned monthly/quarterly sales quotas' },
+    ],
+  },
+  {
+    id: 'attachments',
+    title: 'Document Attachments',
+    description: 'Uploaded contracts, proposals, and customer files',
+    permissions: [
+      { key: 'ATTACHMENTS_VIEW', label: 'View Attachments', description: 'Open and inspect uploaded documents' },
+      { key: 'ATTACHMENTS_UPLOAD', label: 'Upload Attachments', description: 'Upload proposals, files, and agreements' },
+    ],
+  },
+  {
+    id: 'data',
+    title: 'Import & Export',
+    description: 'Bulk CSV / Excel data operations',
+    permissions: [
+      { key: 'IMPORT_VIEW', label: 'View Import Tool', description: 'Access data import wizard' },
+      { key: 'IMPORT_CREATE', label: 'Import Leads Data', description: 'Upload and ingest CSV lead datasets' },
+      { key: 'EXPORT_DATA', label: 'Export Data', description: 'Download CSV and Excel CRM reports' },
+    ],
+  },
+  {
+    id: 'other',
+    title: 'Tags & Notifications',
+    description: 'Metadata tags and system notification alerts',
+    permissions: [
+      { key: 'TAGS_VIEW', label: 'View Tags & Segments', description: 'Filter leads by tags and custom segments' },
+      { key: 'TAGS_MANAGE', label: 'Manage Tags', description: 'Create, edit, or remove CRM tags' },
+      { key: 'NOTIFICATIONS_VIEW', label: 'View Notifications', description: 'Receive in-app alerts and notifications' },
+    ],
+  },
+];
+
+/**
+ * Standard Salesman preset (default baseline permissions)
+ */
+export const DEFAULT_SALESMAN_PERMISSIONS: SalesmanPermission[] = [
+  'LEADS_VIEW',
+  'LEADS_CREATE',
+  'LEADS_EDIT',
+  'LEADS_TRANSFER',
+  'CLIENTS_VIEW',
+  'CLIENTS_CREATE',
+  'CLIENTS_TRANSFER',
+  'ACTIVITIES_VIEW',
+  'ACTIVITIES_CREATE',
+  'COMMUNICATIONS_VIEW',
+  'COMMUNICATIONS_CREATE',
+  'TRANSFER_HISTORY_VIEW',
+  'FOLLOWUPS_VIEW',
+  'FOLLOWUPS_CREATE',
+  'FOLLOWUPS_EDIT',
+  'CALENDAR_VIEW',
+  'TARGETS_VIEW',
+  'TAGS_VIEW',
+  'NOTIFICATIONS_VIEW',
+  'ATTACHMENTS_VIEW',
+  'ATTACHMENTS_UPLOAD',
+];
+
+/**
+ * Senior Salesman preset (elevated permissions: lead assignment, reports, export, tag management)
+ */
+export const SENIOR_SALESMAN_PERMISSIONS: SalesmanPermission[] = [
+  'LEADS_VIEW',
+  'LEADS_CREATE',
+  'LEADS_EDIT',
+  'LEADS_ASSIGN',
+  'LEADS_TRANSFER',
+  'CLIENTS_VIEW',
+  'CLIENTS_CREATE',
+  'CLIENTS_EDIT',
+  'CLIENTS_TRANSFER',
+  'ACTIVITIES_VIEW',
+  'ACTIVITIES_CREATE',
+  'COMMUNICATIONS_VIEW',
+  'COMMUNICATIONS_CREATE',
+  'TRANSFER_HISTORY_VIEW',
+  'FOLLOWUPS_VIEW',
+  'FOLLOWUPS_CREATE',
+  'FOLLOWUPS_EDIT',
+  'CALENDAR_VIEW',
+  'REPORTS_VIEW',
+  'TARGETS_VIEW',
+  'TAGS_VIEW',
+  'TAGS_MANAGE',
+  'NOTIFICATIONS_VIEW',
+  'ATTACHMENTS_VIEW',
+  'ATTACHMENTS_UPLOAD',
+  'EXPORT_DATA',
+];
+
+/**
+ * Helper to evaluate whether a user has a specific permission
+ */
+export function hasPermission(
+  user: UserProfile | null | undefined,
+  permission: SalesmanPermission
+): boolean {
+  if (!user) return false;
+  // Super Admin and Company Admin always have full authorization
+  const role = (user.role || '').toUpperCase();
+  if (role === 'SUPER_ADMIN' || role === 'ADMIN') {
+    return true;
+  }
+  // For SALESMAN, if permissions array is present use it; otherwise fallback to default permissions
+  const perms = Array.isArray(user.permissions) ? user.permissions : DEFAULT_SALESMAN_PERMISSIONS;
+  return perms.includes(permission);
+}
+
+/**
  * User Profile in Firestore: `users/{userId}`
  */
 export interface UserProfile {
@@ -142,6 +369,7 @@ export interface UserProfile {
   is_active: boolean; // default: true
   created_at: string; // ISO 8601 string
   updated_at: string; // ISO 8601 string
+  permissions?: SalesmanPermission[]; // Granular permissions configured by Company Admin
 }
 
 /**
@@ -214,12 +442,16 @@ export interface ClientRecord {
   whatsapp?: string;
   email?: string;
   location?: string;
+  address?: string;
   client_type?: string;
-  source_lead_id: string; // Direct link to immutable source lead
+  source?: string; // 'Converted Lead' | 'Direct Customer' | 'Referral' | etc.
+  source_lead_id?: string; // Direct link to immutable source lead (if converted from lead)
   owner_id: string; // Responsible salesman UID
   owner_name?: string; // Denormalized salesman display name
   status: ClientStatus; // 'Active' | 'Inactive'
   notes?: string;
+  created_by?: string;
+  created_by_name?: string;
   converted_by?: string; // User UID who converted
   converted_by_name?: string;
   converted_at?: string; // ISO timestamp of conversion
@@ -241,28 +473,62 @@ export interface ClientRecord {
 }
 
 /**
- * Lead Transfer History in Firestore: `leads/{leadId}/transfers/{transferId}`
+ * Lead Transfer Record in Firestore: `leads/{leadId}/transfers/{transferId}` & `lead_transfers/{transferId}`
  */
 export interface LeadTransferRecord {
   id: string;
+  company_id?: string;
   lead_id: string;
+  lead_name?: string;
   previous_owner: string; // Previous assigned_to UID
   previous_owner_name?: string;
+  from_user_id?: string;
+  from_user_name?: string;
   new_owner: string; // New assigned_to UID
   new_owner_name?: string;
-  transferred_by: string; // Admin UID
+  to_user_id?: string;
+  to_user_name?: string;
+  transferred_by: string; // Actor UID
   transferred_by_name?: string;
   transferred_at: string; // ISO string
+  timestamp?: string;
   reason?: string;
 }
 
 /**
- * Lead Activity in Firestore: `leads/{leadId}/activities/{activityId}`
+ * Client Ownership Transfer Record in Firestore: `clients/{clientId}/transfers/{transferId}` & `client_transfers/{transferId}`
+ */
+export interface ClientTransferRecord {
+  id: string;
+  company_id?: string;
+  client_id: string;
+  client_name?: string;
+  from_user_id: string;
+  from_user_name?: string;
+  previous_owner?: string;
+  previous_owner_name?: string;
+  to_user_id: string;
+  to_user_name?: string;
+  new_owner?: string;
+  new_owner_name?: string;
+  transferred_by: string;
+  transferred_by_name?: string;
+  transferred_at: string;
+  timestamp?: string;
+  reason?: string;
+}
+
+/**
+ * Lead / Client Activity in Firestore: `leads/{leadId}/activities/{activityId}` or `clients/{clientId}/activities/{activityId}`
  */
 export interface LeadActivityRecord {
   id: string;
   company_id?: string; // Tenant company boundary
-  lead_id: string; // Belongs to Lead
+  lead_id?: string; // Belongs to Lead (if lead activity)
+  client_id?: string; // Belongs to Client (if client activity)
+  client_name?: string;
+  company_name?: string;
+  entity_type?: 'lead' | 'client';
   activity_type: ActivityType;
   outcome?: string; // e.g. 'Connected', 'Message Sent', 'Quotation Accepted'
   description: string;
@@ -546,8 +812,29 @@ export interface TransferLeadInput {
   reason?: string;
 }
 
+export interface CreateClientInput {
+  name?: string;
+  company_name: string;
+  contact_person?: string;
+  phone: string;
+  whatsapp?: string;
+  email?: string;
+  location?: string;
+  address?: string;
+  client_type?: string;
+  source?: string;
+  notes?: string;
+  tags?: string[];
+  status?: ClientStatus;
+  owner_id?: string;
+  owner_name?: string;
+}
+
 export interface CreateActivityInput {
-  lead_id: string;
+  lead_id?: string;
+  client_id?: string;
+  client_name?: string;
+  company_name?: string;
   activity_type: ActivityType;
   description: string;
   outcome?: string;
