@@ -66,6 +66,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         return 'Analytics & Conversion Reports';
       case 'notifications':
         return 'System Notifications';
+      case 'communication-hub':
+        return 'Company Communication Hub';
       case 'audit':
         return 'Security Audit Trail';
       case 'data-quality':

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Target,
   Trophy,
@@ -9,13 +9,24 @@ import {
   AlertCircle,
   Award,
 } from 'lucide-react';
-import { UserProfile, LeadRecord, FollowUpRecord, LeadActivityRecord } from '../../types/database';
+import {
+  UserProfile,
+  LeadRecord,
+  FollowUpRecord,
+  LeadActivityRecord,
+  ClientRecord,
+  TargetRecord,
+} from '../../types/database';
+import { calculateTargetProgress, formatTargetTypeName, formatPeriodName } from '../../utils/targetUtils';
+import { subscribeToTargets } from '../../lib/dal';
 
 interface SalesmanPerformanceCardProps {
   userProfile: UserProfile;
   leads: LeadRecord[];
   followups: FollowUpRecord[];
   activities: LeadActivityRecord[];
+  clients?: ClientRecord[];
+  targets?: TargetRecord[];
 }
 
 export const SalesmanPerformanceCard: React.FC<SalesmanPerformanceCardProps> = ({
@@ -23,8 +34,34 @@ export const SalesmanPerformanceCard: React.FC<SalesmanPerformanceCardProps> = (
   leads,
   followups,
   activities,
+  clients = [],
+  targets: propTargets,
 }) => {
-  // Target Configurations (No fake targets; strictly from database)
+  const [activeTargets, setActiveTargets] = useState<TargetRecord[]>(propTargets || []);
+
+  useEffect(() => {
+    if (propTargets) {
+      setActiveTargets(propTargets.filter((t) => t.status === 'ACTIVE'));
+      return;
+    }
+
+    if (userProfile?.company_id && userProfile?.id) {
+      const unsub = subscribeToTargets(
+        userProfile.company_id,
+        (fetched) => {
+          const myTargets = fetched.filter(
+            (t) => t.salesman_id === userProfile.id && t.status === 'ACTIVE'
+          );
+          setActiveTargets(myTargets);
+        },
+        userProfile.id,
+        userProfile.role
+      );
+      return () => unsub();
+    }
+  }, [userProfile?.company_id, userProfile?.id, userProfile?.role, propTargets]);
+
+  // Legacy Target Configurations (Fallback)
   const targetRevenue = (userProfile as any)?.target_revenue
     ? Number((userProfile as any).target_revenue)
     : null;
@@ -32,7 +69,9 @@ export const SalesmanPerformanceCard: React.FC<SalesmanPerformanceCardProps> = (
     ? Number((userProfile as any).target_leads)
     : null;
 
-  const hasConfiguredTarget = targetRevenue !== null || targetLeads !== null;
+  const hasNewTargets = activeTargets.length > 0;
+  const hasLegacyTarget = targetRevenue !== null || targetLeads !== null;
+  const hasConfiguredTarget = hasNewTargets || hasLegacyTarget;
 
   // Closed Won Leads & Values
   const wonLeads = leads.filter((l) => l.status === 'Won');
@@ -58,7 +97,7 @@ export const SalesmanPerformanceCard: React.FC<SalesmanPerformanceCardProps> = (
     (a) => a.created_by === userProfile.id || (a as any).salesman_id === userProfile.id
   ).length;
 
-  // Target Achievement calculations
+  // Legacy calculations
   let pendingRevenue: number | null = null;
   let revenueProgressPct: number = 0;
   if (targetRevenue !== null) {
@@ -100,7 +139,7 @@ export const SalesmanPerformanceCard: React.FC<SalesmanPerformanceCardProps> = (
           {hasConfiguredTarget ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700 border border-emerald-200">
               <CheckCircle2 className="h-3 w-3" />
-              <span>Target Active</span>
+              <span>{activeTargets.length > 0 ? `${activeTargets.length} Active Target(s)` : 'Target Active'}</span>
             </span>
           ) : (
             <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-500 border border-slate-200">
@@ -111,8 +150,54 @@ export const SalesmanPerformanceCard: React.FC<SalesmanPerformanceCardProps> = (
         </div>
       </div>
 
-      {/* Target Progress Bar (Only if configured) */}
-      {hasConfiguredTarget ? (
+      {/* Target Progress Section */}
+      {hasNewTargets ? (
+        <div className="space-y-3">
+          {activeTargets.map((target) => {
+            const progress = calculateTargetProgress(target, leads, clients, followups, activities);
+            return (
+              <div
+                key={target.id}
+                className="rounded-xl bg-[var(--bg-elevated)] p-4 border border-[var(--border-color)] space-y-2"
+              >
+                <div className="flex items-center justify-between text-xs font-semibold text-[var(--text-main)]">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold">{formatTargetTypeName(target.target_type)}</span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${progress.statusColor}`}>
+                      {progress.status}
+                    </span>
+                  </div>
+                  <span className="text-[var(--color-primary)] font-bold">
+                    {progress.current} / {progress.target} ({progress.percentage}%)
+                  </span>
+                </div>
+
+                <div className="h-2 w-full rounded-full bg-[var(--border-color)] overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      progress.percentage >= 100
+                        ? 'bg-emerald-500'
+                        : progress.percentage >= 50
+                        ? 'bg-amber-400'
+                        : 'bg-sky-400'
+                    }`}
+                    style={{ width: `${Math.min(100, progress.percentage)}%` }}
+                  />
+                </div>
+
+                <div className="flex justify-between text-[11px] text-[var(--text-muted)]">
+                  <span>
+                    {progress.remaining > 0
+                      ? `Remaining: ${progress.remaining} to achieve goal`
+                      : 'Target achieved! Outstanding performance.'}
+                  </span>
+                  <span>{formatPeriodName(target.period_type, target.start_date, target.end_date)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : hasLegacyTarget ? (
         <div className="rounded-xl bg-[var(--bg-elevated)] p-4 border border-[var(--border-color)] space-y-3">
           {targetRevenue !== null && (
             <div className="space-y-1.5">
@@ -211,3 +296,4 @@ export const SalesmanPerformanceCard: React.FC<SalesmanPerformanceCardProps> = (
     </div>
   );
 };
+

@@ -23,6 +23,7 @@ import {
   X,
   UserCheck,
   User,
+  MessageSquareText,
 } from 'lucide-react';
 import { NavigationView } from '../../types/crm';
 import { useAuth } from '../../context/AuthContext';
@@ -167,6 +168,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {
                 title: 'Company Administration',
                 items: [
+                  {
+                    id: 'communication-hub' as NavigationView,
+                    label: 'Communication Hub',
+                    icon: MessageSquareText,
+                  },
                   {
                     id: 'team' as NavigationView,
                     label: 'Team',

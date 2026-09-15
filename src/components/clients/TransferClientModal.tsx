@@ -35,16 +35,19 @@ export const TransferClientModal: React.FC<TransferClientModalProps> = ({
 
       getActiveSalesmen()
         .then((users) => {
-          // Filter to same company
-          const companyUsers = client.company_id
-            ? users.filter((u) => !u.company_id || u.company_id === client.company_id)
-            : users;
-          setSalesmen(companyUsers);
-          const other = companyUsers.find((u) => u.id !== client.owner_id);
+          // Rule 3 & 4: Only active salesmen from the SAME company.
+          // Never allow transfer to another company, Customer, SUPER_ADMIN, or ADMIN.
+          const filtered = users.filter((u) => {
+            const isSameCompany = !client.company_id || !u.company_id || u.company_id === client.company_id;
+            const isSalesman = u.role === 'SALESMAN' || u.role === 'sales_rep';
+            return isSameCompany && isSalesman && u.is_active !== false;
+          });
+          setSalesmen(filtered);
+          const other = filtered.find((u) => u.id !== client.owner_id);
           if (other) {
             setSelectedSalesmanId(other.id);
-          } else if (companyUsers.length > 0) {
-            setSelectedSalesmanId(companyUsers[0].id);
+          } else if (filtered.length > 0) {
+            setSelectedSalesmanId(filtered[0].id);
           }
         })
         .catch((err) => {
@@ -55,7 +58,7 @@ export const TransferClientModal: React.FC<TransferClientModalProps> = ({
           setLoadingUsers(false);
         });
     }
-  }, [isOpen, client.owner_id]);
+  }, [isOpen, client.owner_id, client.company_id]);
 
   if (!isOpen) return null;
 
@@ -64,7 +67,7 @@ export const TransferClientModal: React.FC<TransferClientModalProps> = ({
     setError(null);
 
     if (!selectedSalesmanId) {
-      setError('Please select a new representative.');
+      setError('Please select a new salesman.');
       return;
     }
 
@@ -73,10 +76,13 @@ export const TransferClientModal: React.FC<TransferClientModalProps> = ({
       return;
     }
 
+    if (!reason.trim()) {
+      setError('Reason is required for client ownership transfer.');
+      return;
+    }
+
     const selectedSalesman = salesmen.find((s) => s.id === selectedSalesmanId);
-    const newOwnerName = selectedSalesman?.full_name || selectedSalesman?.email || 'New Representative';
-    const adminId = userProfile?.id || currentUser?.uid || '';
-    const adminName = userProfile?.full_name || currentUser?.displayName || 'Admin';
+    const newOwnerName = selectedSalesman?.full_name || selectedSalesman?.email || 'New Salesman';
 
     try {
       setSubmitting(true);
@@ -106,7 +112,7 @@ export const TransferClientModal: React.FC<TransferClientModalProps> = ({
               <UserCheck className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Transfer Client Ownership</h3>
+              <h3 className="text-sm font-bold text-slate-900">Transfer Client</h3>
               <p className="text-xs text-slate-500 truncate max-w-xs">{client.company_name}</p>
             </div>
           </div>
@@ -124,7 +130,7 @@ export const TransferClientModal: React.FC<TransferClientModalProps> = ({
         <div className="bg-amber-50/80 border-b border-amber-200 px-5 py-2.5 text-xs text-amber-900 flex items-start gap-2">
           <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
           <p>
-            <strong>Preserving Historical Record:</strong> Transferring this Client portfolio reassigns the active account without altering the original Lead’s closing representative.
+            <strong>Preserving Historical Record:</strong> Transferring this Client reassigns the active account without altering the original Lead’s closing representative.
           </p>
         </div>
 
@@ -137,47 +143,60 @@ export const TransferClientModal: React.FC<TransferClientModalProps> = ({
             </div>
           )}
 
-          {/* Current Owner Display */}
-          <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs flex items-center justify-between">
-            <span className="text-slate-500">Current Representative:</span>
-            <span className="font-bold text-slate-800">{currentOwnerName || 'Unassigned'}</span>
+          {/* Client & Current Owner Display */}
+          <div className="rounded-xl bg-slate-50 border border-slate-200 p-3.5 space-y-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500 font-medium">Client:</span>
+              <span className="font-bold text-slate-900 truncate max-w-[200px]">{client.company_name}</span>
+            </div>
+            <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60">
+              <span className="text-slate-500 font-medium">Current Owner:</span>
+              <span className="font-bold text-slate-800">{currentOwnerName || 'Unassigned'}</span>
+            </div>
           </div>
 
-          {/* New Representative Selector */}
+          {/* Transfer To (Salesman selector) */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-              Reassign To Representative <span className="text-rose-500">*</span>
+              Transfer To <span className="text-rose-500">*</span>
             </label>
             {loadingUsers ? (
               <div className="flex items-center gap-2 py-2 text-xs text-slate-500">
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-600" />
-                <span>Loading team...</span>
+                <span>Loading team members...</span>
+              </div>
+            ) : salesmen.length === 0 ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                No other active salesmen found in this company.
               </div>
             ) : (
               <select
+                id="transfer-to-salesman-select"
                 value={selectedSalesmanId}
                 onChange={(e) => setSelectedSalesmanId(e.target.value)}
                 className="w-full rounded-lg border border-slate-300 bg-white py-2 px-3 text-xs sm:text-sm font-medium text-slate-800 focus:border-emerald-600 focus:outline-none cursor-pointer"
               >
                 {salesmen.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.full_name} ({s.email}) {s.id === client.owner_id ? '(Current)' : ''}
+                    {s.full_name} ({s.email}) {s.id === client.owner_id ? '(Current Owner)' : ''}
                   </option>
                 ))}
               </select>
             )}
           </div>
 
-          {/* Reassignment Reason */}
+          {/* Reason (required text) */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-              Reason / Account Handover Notes
+              Reason <span className="text-rose-500">*</span>
             </label>
             <textarea
+              id="transfer-client-reason-input"
               rows={3}
+              required
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="E.g., Client relationship realignment, regional portfolio transition..."
+              placeholder="Provide a reason for transferring this client (required)..."
               className="w-full rounded-lg border border-slate-300 py-2 px-3 text-xs sm:text-sm text-slate-800 focus:border-emerald-600 focus:outline-none placeholder:text-slate-400"
             />
           </div>
@@ -186,6 +205,7 @@ export const TransferClientModal: React.FC<TransferClientModalProps> = ({
           <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
             <button
               type="button"
+              id="cancel-transfer-client-btn"
               onClick={onClose}
               disabled={submitting}
               className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
@@ -194,7 +214,8 @@ export const TransferClientModal: React.FC<TransferClientModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={submitting || loadingUsers}
+              id="confirm-transfer-client-btn"
+              disabled={submitting || loadingUsers || salesmen.length === 0}
               className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-50 transition cursor-pointer"
             >
               {submitting ? (
@@ -205,7 +226,7 @@ export const TransferClientModal: React.FC<TransferClientModalProps> = ({
               ) : (
                 <>
                   <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>Confirm Transfer</span>
+                  <span>Transfer Client</span>
                 </>
               )}
             </button>

@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   Award,
   Layers,
+  Target,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -34,6 +35,8 @@ import {
   FollowUpRecord,
   LeadActivityRecord,
   CompanyRecord,
+  ClientRecord,
+  TargetRecord,
   SalesmanPermission,
   DEFAULT_SALESMAN_PERMISSIONS,
   PERMISSION_GROUPS,
@@ -44,6 +47,9 @@ import {
   subscribeToLeads,
   subscribeToFollowUps,
   subscribeToAllActivities,
+  subscribeToClients,
+  subscribeToTargets,
+  deleteTarget,
   createCompanyUser,
   updateCompanySalesman,
   updateCompanySalesmanPermissions,
@@ -52,21 +58,39 @@ import {
 } from '../lib/dal';
 import { SalesmanPermissionsEditor } from '../components/team/SalesmanPermissionsEditor';
 import { isFollowUpDueToday, isFollowUpOverdue } from '../utils/dashboardUtils';
+import { AdminSalesmanProfileView } from '../components/team/AdminSalesmanProfileView';
+import { SetTargetModal } from '../components/team/SetTargetModal';
+import { calculateTargetProgress, formatTargetTypeName, formatPeriodName } from '../utils/targetUtils';
 
 interface TeamPageProps {
   onSelectLead?: (leadId: string) => void;
+  onSelectClient?: (clientId: string) => void;
+  selectedSalesmanId?: string | null;
+  onSelectSalesman?: (salesmanId: string | null) => void;
 }
 
-export const TeamPage: React.FC<TeamPageProps> = ({ onSelectLead }) => {
+export const TeamPage: React.FC<TeamPageProps> = ({
+  onSelectLead,
+  onSelectClient,
+  selectedSalesmanId,
+  onSelectSalesman,
+}) => {
   const { userProfile, companyId, isSuperAdmin, isAdmin } = useAuth();
 
   // Data States
   const [teamMembers, setTeamMembers] = useState<UserProfile[]>([]);
   const [leads, setLeads] = useState<LeadRecord[]>([]);
+  const [clients, setClients] = useState<ClientRecord[]>([]);
   const [followups, setFollowups] = useState<FollowUpRecord[]>([]);
   const [activities, setActivities] = useState<LeadActivityRecord[]>([]);
+  const [targets, setTargets] = useState<TargetRecord[]>([]);
   const [company, setCompany] = useState<CompanyRecord | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+
+  // Target Modal States
+  const [targetModalOpen, setTargetModalOpen] = useState<boolean>(false);
+  const [targetModalSalesman, setTargetModalSalesman] = useState<UserProfile | null>(null);
+  const [editingTarget, setEditingTarget] = useState<TargetRecord | null>(null);
 
   // Filter & Search States
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -142,13 +166,30 @@ export const TeamPage: React.FC<TeamPageProps> = ({ onSelectLead }) => {
       setActivities(updatedActs);
     });
 
+    // 5. Subscribe to clients
+    const unsubClients = subscribeToClients((updatedClients) => {
+      setClients(updatedClients);
+    });
+
+    // 6. Subscribe to targets
+    const unsubTargets = subscribeToTargets(
+      effectiveCompanyId,
+      (updatedTargets) => {
+        setTargets(updatedTargets);
+      },
+      userProfile?.id,
+      userProfile?.role
+    );
+
     return () => {
       unsubUsers();
       unsubLeads();
       unsubFollowups();
       unsubActivities();
+      unsubClients();
+      unsubTargets();
     };
-  }, [effectiveCompanyId, userProfile?.role]);
+  }, [effectiveCompanyId, userProfile?.role, userProfile?.id]);
 
   // Separate Salesmen from Admins
   const salesmen = useMemo(() => {
@@ -341,6 +382,80 @@ export const TeamPage: React.FC<TeamPageProps> = ({ onSelectLead }) => {
       setFormSubmitting(false);
     }
   };
+
+  // Full Salesman Profile View when selectedSalesmanId is provided
+  const fullProfileSalesman = useMemo(() => {
+    if (!selectedSalesmanId) return null;
+    return teamMembers.find((m) => m.id === selectedSalesmanId) || null;
+  }, [selectedSalesmanId, teamMembers]);
+
+  if (fullProfileSalesman) {
+    return (
+      <div className="space-y-6">
+        <AdminSalesmanProfileView
+          salesman={fullProfileSalesman}
+          companyId={effectiveCompanyId}
+          companyName={company?.name}
+          leads={leads}
+          clients={clients}
+          followups={followups}
+          activities={activities}
+          targets={targets}
+          onBack={() => {
+            if (onSelectSalesman) onSelectSalesman(null);
+          }}
+          onSelectLead={onSelectLead}
+          onSelectClient={onSelectClient}
+          onEditSalesman={(s) => {
+            setEditingUser(s);
+            setFormData({
+              fullName: s.full_name,
+              email: s.email,
+              phone: s.phone || '',
+              password: '',
+            });
+            setEditPermissions(
+              s.permissions && s.permissions.length > 0
+                ? [...s.permissions]
+                : [...DEFAULT_SALESMAN_PERMISSIONS]
+            );
+            setEditModalTab('profile');
+            setFormError(null);
+          }}
+          onOpenSetTarget={(s, existing) => {
+            setTargetModalSalesman(s);
+            setEditingTarget(existing || null);
+            setTargetModalOpen(true);
+          }}
+          onDeleteTarget={async (targetId) => {
+            try {
+              await deleteTarget(targetId);
+              showToast('Target deleted successfully.');
+            } catch (err: any) {
+              showToast(err?.message || 'Failed to delete target', 'error');
+            }
+          }}
+        />
+
+        {/* Set Target Modal */}
+        <SetTargetModal
+          isOpen={targetModalOpen}
+          salesman={targetModalSalesman || fullProfileSalesman}
+          companyId={effectiveCompanyId}
+          existingTarget={editingTarget}
+          onClose={() => {
+            setTargetModalOpen(false);
+            setEditingTarget(null);
+          }}
+          onSuccess={() => {
+            showToast('Salesman target saved successfully.');
+            setTargetModalOpen(false);
+            setEditingTarget(null);
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-16">
@@ -659,7 +774,11 @@ export const TeamPage: React.FC<TeamPageProps> = ({ onSelectLead }) => {
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-3">
                           <div
-                            className="h-9 w-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0 border"
+                            onClick={() => {
+                              if (onSelectSalesman) onSelectSalesman(salesman.id);
+                              else setSelectedUserForDetails(salesman);
+                            }}
+                            className="h-9 w-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0 border cursor-pointer hover:opacity-80 transition"
                             style={{
                               backgroundColor: 'rgba(212, 175, 55, 0.15)',
                               borderColor: 'var(--color-primary)',
@@ -669,7 +788,14 @@ export const TeamPage: React.FC<TeamPageProps> = ({ onSelectLead }) => {
                             {initials || 'SR'}
                           </div>
                           <div>
-                            <div className="font-bold flex items-center gap-1.5" style={{ color: 'var(--text-main)' }}>
+                            <div
+                              onClick={() => {
+                                if (onSelectSalesman) onSelectSalesman(salesman.id);
+                                else setSelectedUserForDetails(salesman);
+                              }}
+                              className="font-bold flex items-center gap-1.5 cursor-pointer hover:text-amber-400 transition"
+                              style={{ color: 'var(--text-main)' }}
+                            >
                               {salesman.full_name}
                               {!salesman.is_active && (
                                 <span className="text-[10px] text-rose-400 font-normal">
@@ -786,6 +912,26 @@ export const TeamPage: React.FC<TeamPageProps> = ({ onSelectLead }) => {
                             OMR {metrics.wonValue.toLocaleString()} closed
                           </div>
                         )}
+                        {(() => {
+                          const activeTarget = targets.find(
+                            (t) => t.salesman_id === salesman.id && t.status === 'ACTIVE'
+                          );
+                          if (!activeTarget) return null;
+                          const tp = calculateTargetProgress(activeTarget, leads, clients, followups, activities);
+                          return (
+                            <div className="mt-1 flex items-center gap-1.5 text-[10px]">
+                              <span className="font-semibold text-amber-400 flex items-center gap-0.5">
+                                <Target className="h-3 w-3" /> Target:
+                              </span>
+                              <span className="font-bold" style={{ color: 'var(--text-main)' }}>
+                                {tp.percentage}%
+                              </span>
+                              <span className="text-[var(--text-muted)]">
+                                ({tp.current}/{tp.target})
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Joined Date */}
@@ -804,10 +950,45 @@ export const TeamPage: React.FC<TeamPageProps> = ({ onSelectLead }) => {
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {/* Full Profile */}
+                          {onSelectSalesman && (
+                            <button
+                              type="button"
+                              title="Open Full Salesman Profile & Analytics"
+                              onClick={() => onSelectSalesman(salesman.id)}
+                              className="p-1.5 rounded-lg border transition cursor-pointer hover:border-amber-400 text-amber-400 hover:bg-amber-400/10"
+                              style={{
+                                borderColor: 'var(--border-color)',
+                              }}
+                            >
+                              <Users className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+
+                          {/* Set Target */}
+                          <button
+                            type="button"
+                            title="Set / Manage Sales Target"
+                            onClick={() => {
+                              const existing = targets.find(
+                                (t) => t.salesman_id === salesman.id && t.status === 'ACTIVE'
+                              );
+                              setTargetModalSalesman(salesman);
+                              setEditingTarget(existing || null);
+                              setTargetModalOpen(true);
+                            }}
+                            className="p-1.5 rounded-lg border transition cursor-pointer hover:border-emerald-400 text-emerald-400 hover:bg-emerald-400/10"
+                            style={{
+                              borderColor: 'var(--border-color)',
+                            }}
+                          >
+                            <Target className="h-3.5 w-3.5" />
+                          </button>
+
                           {/* View Details */}
                           <button
                             type="button"
-                            title="View Salesman Profile & Details"
+                            title="View Salesman Quick Drawer"
                             onClick={() => setSelectedUserForDetails(salesman)}
                             className="p-1.5 rounded-lg border transition cursor-pointer hover:border-amber-400"
                             style={{
@@ -1503,6 +1684,27 @@ export const TeamPage: React.FC<TeamPageProps> = ({ onSelectLead }) => {
                 </button>
               </div>
 
+              {/* Action Banner: Open Full Profile */}
+              {onSelectSalesman && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = selectedUserForDetails.id;
+                    setSelectedUserForDetails(null);
+                    onSelectSalesman(id);
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 border transition cursor-pointer hover:opacity-90"
+                  style={{
+                    backgroundColor: 'rgba(212, 175, 55, 0.15)',
+                    borderColor: 'var(--color-primary)',
+                    color: 'var(--color-primary)',
+                  }}
+                >
+                  <Eye className="h-4 w-4" />
+                  <span>Open Full Performance Profile & Target Manager</span>
+                </button>
+              )}
+
               {/* Contact Info & Meta */}
               <div
                 className="p-4 rounded-xl border grid grid-cols-2 gap-3 text-xs"
@@ -1590,6 +1792,93 @@ export const TeamPage: React.FC<TeamPageProps> = ({ onSelectLead }) => {
                   </div>
                 </div>
               </div>
+
+              {/* Commercial Sales Quota & Target Card */}
+              {(() => {
+                const salesmanTarget = targets.find(
+                  (t) => t.salesman_id === selectedUserForDetails.id && t.status === 'ACTIVE'
+                );
+                const targetProgress = salesmanTarget
+                  ? calculateTargetProgress(salesmanTarget, leads, clients, followups, activities)
+                  : null;
+
+                return (
+                  <div
+                    className="p-4 rounded-xl border space-y-3"
+                    style={{ backgroundColor: 'rgba(255, 255, 255, 0.02)', borderColor: 'var(--border-color)' }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Target className="h-4 w-4 text-amber-400" />
+                        <h4 className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                          Sales Target & Quota
+                        </h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTargetModalSalesman(selectedUserForDetails);
+                          setEditingTarget(salesmanTarget || null);
+                          setTargetModalOpen(true);
+                        }}
+                        className="text-[11px] font-bold text-amber-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        {salesmanTarget ? 'Edit Target' : '+ Set Target'}
+                      </button>
+                    </div>
+
+                    {salesmanTarget && targetProgress ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold" style={{ color: 'var(--text-main)' }}>
+                            {formatTargetTypeName(salesmanTarget.target_type)}
+                          </span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${targetProgress.statusColor}`}>
+                            {targetProgress.status} ({targetProgress.percentage}%)
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between text-xs">
+                          <span className="text-base font-extrabold text-amber-400">
+                            {targetProgress.current} / {targetProgress.target}
+                          </span>
+                          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                            {formatPeriodName(salesmanTarget.period_type, salesmanTarget.start_date, salesmanTarget.end_date)}
+                          </span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              targetProgress.percentage >= 100
+                                ? 'bg-emerald-500'
+                                : targetProgress.percentage >= 50
+                                ? 'bg-amber-400'
+                                : 'bg-sky-400'
+                            }`}
+                            style={{ width: `${Math.min(100, targetProgress.percentage)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between py-1">
+                        <p className="text-xs italic" style={{ color: 'var(--text-muted)' }}>
+                          No active commercial target assigned.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTargetModalSalesman(selectedUserForDetails);
+                            setEditingTarget(null);
+                            setTargetModalOpen(true);
+                          }}
+                          className="px-2.5 py-1 text-xs font-bold rounded-lg border border-amber-400/40 text-amber-400 hover:bg-amber-400/10 cursor-pointer"
+                        >
+                          Set Target
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Assigned Leads Preview */}
               <div className="space-y-3">
@@ -1724,6 +2013,21 @@ export const TeamPage: React.FC<TeamPageProps> = ({ onSelectLead }) => {
                 <button
                   type="button"
                   onClick={() => {
+                    const existing = targets.find(
+                      (t) => t.salesman_id === selectedUserForDetails.id && t.status === 'ACTIVE'
+                    );
+                    setTargetModalSalesman(selectedUserForDetails);
+                    setEditingTarget(existing || null);
+                    setTargetModalOpen(true);
+                  }}
+                  className="px-3 py-2 text-xs font-bold rounded-xl border border-emerald-400/40 text-emerald-400 hover:bg-emerald-400/10 transition cursor-pointer inline-flex items-center gap-1.5"
+                >
+                  <Target className="h-3.5 w-3.5" />
+                  <span>Target</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
                     setEditingUser(selectedUserForDetails);
                     setFormData({
                       fullName: selectedUserForDetails.full_name,
@@ -1788,6 +2092,23 @@ export const TeamPage: React.FC<TeamPageProps> = ({ onSelectLead }) => {
           </div>
         );
       })()}
+
+      {/* Global Set Target Modal for Team Table & Drawer */}
+      <SetTargetModal
+        isOpen={targetModalOpen}
+        salesman={targetModalSalesman}
+        companyId={effectiveCompanyId}
+        existingTarget={editingTarget}
+        onClose={() => {
+          setTargetModalOpen(false);
+          setEditingTarget(null);
+        }}
+        onSuccess={() => {
+          showToast('Salesman target updated successfully.');
+          setTargetModalOpen(false);
+          setEditingTarget(null);
+        }}
+      />
     </div>
   );
 };

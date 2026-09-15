@@ -26,12 +26,16 @@ interface CreateClientModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreated?: (client: ClientRecord) => void;
+  onViewExistingClient?: (clientId: string) => void;
+  onOpenTransfer?: (client: ClientRecord) => void;
 }
 
 export const CreateClientModal: React.FC<CreateClientModalProps> = ({
   isOpen,
   onClose,
   onCreated,
+  onViewExistingClient,
+  onOpenTransfer,
 }) => {
   const { userProfile, currentUser, isAdmin, isSuperAdmin, hasPermission } = useAuth();
 
@@ -119,8 +123,8 @@ export const CreateClientModal: React.FC<CreateClientModalProps> = ({
     e.preventDefault();
     setSubmitError(null);
 
-    if (!companyName.trim()) {
-      setSubmitError('Client / Company Name is required.');
+    if (!contactPerson.trim() && !companyName.trim()) {
+      setSubmitError('Client Name or Company Name is required.');
       return;
     }
     if (!phone.trim()) {
@@ -135,10 +139,13 @@ export const CreateClientModal: React.FC<CreateClientModalProps> = ({
 
     const assignedOwner = teamMembers.find((u) => u.id === selectedOwnerId);
     const ownerName = assignedOwner?.full_name || userProfile?.full_name || currentUser?.displayName || 'Sales Representative';
+    const effectiveCompName = companyName.trim() || contactPerson.trim();
+    const effectiveContact = contactPerson.trim() || companyName.trim();
 
     const input: CreateClientInput = {
-      company_name: companyName.trim(),
-      contact_person: contactPerson.trim(),
+      name: effectiveContact,
+      company_name: effectiveCompName,
+      contact_person: effectiveContact,
       phone: phone.trim(),
       whatsapp: sameAsPhone ? phone.trim() : whatsapp.trim(),
       email: email.trim(),
@@ -194,26 +201,92 @@ export const CreateClientModal: React.FC<CreateClientModalProps> = ({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Duplicate Protection Warning Banner */}
-          {duplicateState.isHardDuplicate && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800 flex items-start gap-3 shadow-xs">
-              <ShieldAlert className="h-5 w-5 text-rose-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-bold text-rose-900">Duplicate Client Blocked</p>
-                <p className="mt-0.5">{duplicateState.hardDuplicateReason}</p>
-                <p className="mt-1 text-[11px] text-rose-700 font-medium">
-                  Under company duplicate protection rules, two salesmen in the same company cannot independently register the same client.
-                </p>
+          {/* HARD DUPLICATE PROTECTION WARNING (Requirement 4) */}
+          {duplicateState.isHardDuplicate && duplicateState.existingMatch && (
+            <div className="rounded-xl border border-rose-300 bg-rose-50/95 p-4 text-xs text-rose-950 shadow-xs space-y-3">
+              <div className="flex items-center gap-2 text-rose-800 font-bold text-sm">
+                <ShieldAlert className="h-5 w-5 text-rose-600 shrink-0" />
+                <span>Client already exists</span>
+              </div>
+
+              <div className="bg-white rounded-xl border border-rose-200 p-3.5 space-y-2 shadow-2xs">
+                <div className="flex justify-between items-start gap-2">
+                  <div>
+                    <p className="font-bold text-slate-900 text-sm">
+                      {duplicateState.existingMatch.company_name}
+                    </p>
+                    {(duplicateState.existingMatch.contact_person || duplicateState.existingMatch.name) && (
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        <span className="font-medium text-slate-400">Client Name:</span>{' '}
+                        {duplicateState.existingMatch.contact_person || duplicateState.existingMatch.name}
+                      </p>
+                    )}
+                  </div>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    {duplicateState.existingMatch.status}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1.5 border-t border-slate-100">
+                  <div>
+                    <span className="font-medium text-slate-500">Phone:</span>{' '}
+                    <span className="font-semibold text-slate-800">{duplicateState.existingMatch.phone}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-slate-500">Current Owner:</span>{' '}
+                    <span className="font-bold text-slate-900">
+                      {duplicateState.existingMatch.owner_name || 'Team member'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-xs font-semibold text-rose-700 bg-rose-50 px-3 py-2 rounded-lg border border-rose-100">
+                  “This client is already assigned to {duplicateState.existingMatch.owner_name || 'another representative'}.”
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {onViewExistingClient && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onViewExistingClient(duplicateState.existingMatch!.id);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 transition cursor-pointer"
+                  >
+                    <span>View Client</span>
+                  </button>
+                )}
+                {onOpenTransfer && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenTransfer(duplicateState.existingMatch!);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition cursor-pointer"
+                  >
+                    <span>Request / Transfer Ownership</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold text-xs hover:bg-slate-50 transition cursor-pointer"
+                >
+                  <span>Cancel</span>
+                </button>
               </div>
             </div>
           )}
 
-          {/* Soft Duplicate Warnings */}
+          {/* SOFT DUPLICATE WARNINGS (Requirement 5) */}
           {!duplicateState.isHardDuplicate && duplicateState.softWarnings.length > 0 && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-800 flex items-start gap-2.5">
               <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
               <div className="space-y-0.5">
-                <p className="font-bold text-amber-900">Potential Duplicate Notice:</p>
+                <p className="font-bold text-amber-900">Possible existing client found:</p>
                 {duplicateState.softWarnings.map((msg, idx) => (
                   <p key={idx} className="text-[11px] text-amber-700 font-medium">
                     • {msg}
@@ -231,20 +304,20 @@ export const CreateClientModal: React.FC<CreateClientModalProps> = ({
             </div>
           )}
 
-          {/* Section 1: Company & Contact */}
+          {/* Section 1: Name & Company (Requirement 3: Name is required, Company Name optional) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-                Client / Company Name <span className="text-rose-500">*</span>
+                Client / Contact Name <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
-                <Building2 className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <User className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                 <input
                   type="text"
                   required
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="E.g., Bahwan Contracting LLC"
+                  value={contactPerson}
+                  onChange={(e) => setContactPerson(e.target.value)}
+                  placeholder="E.g., Eng. Tariq Al-Balushi"
                   className="w-full rounded-lg border border-slate-300 pl-9 pr-3 py-2 text-xs sm:text-sm text-slate-800 focus:border-emerald-600 focus:outline-none"
                 />
               </div>
@@ -252,15 +325,15 @@ export const CreateClientModal: React.FC<CreateClientModalProps> = ({
 
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-                Key Contact Person
+                Company / Business Name
               </label>
               <div className="relative">
-                <User className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <Building2 className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                 <input
                   type="text"
-                  value={contactPerson}
-                  onChange={(e) => setContactPerson(e.target.value)}
-                  placeholder="E.g., Eng. Tariq Al-Balushi"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  placeholder="E.g., Bahwan Contracting LLC"
                   className="w-full rounded-lg border border-slate-300 pl-9 pr-3 py-2 text-xs sm:text-sm text-slate-800 focus:border-emerald-600 focus:outline-none"
                 />
               </div>

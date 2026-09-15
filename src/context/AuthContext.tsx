@@ -57,6 +57,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+let isAnonymousAuthSupported: boolean = true;
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -438,62 +440,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         authoritativeProfile ||
         isSuper
       ) {
-        try {
-          let fbUser = auth.currentUser;
-          if (!fbUser) {
+        let fbUser = auth.currentUser;
+        if (!fbUser && isAnonymousAuthSupported) {
+          try {
             const anonCred = await signInAnonymously(auth);
             fbUser = anonCred.user;
+          } catch (anonErr: any) {
+            isAnonymousAuthSupported = false;
+            // Anonymous auth is restricted or disabled in Firebase project console.
+            // This is expected in projects configured for Google auth only.
+            console.warn('Anonymous auth restricted in Firebase; proceeding with authenticated application session.');
           }
+        }
 
-          const userId = fbUser?.uid || authoritativeProfile?.id || `uid-${targetName.toLowerCase()}`;
+        const userId = fbUser?.uid || authoritativeProfile?.id || `uid-${targetName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
 
-          // Create / update profile in Firestore
-          let profile: UserProfile | null = null;
-          try {
-            profile = await createOrUpdateUserProfile(userId, {
-              full_name: targetName,
-              email: cleanEmail,
-              role: targetRole,
-              company_id: targetCompany,
-              is_active: true,
-              permissions: authoritativeProfile?.permissions,
-            });
-          } catch (e) {
-            console.warn('Could not write to firestore directly:', e);
-            profile = {
-              id: userId,
-              full_name: targetName,
-              email: cleanEmail,
-              role: targetRole,
-              company_id: targetCompany,
-              is_active: true,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              permissions: authoritativeProfile?.permissions,
-            };
-          }
-
-          const activeUser: any = fbUser || {
-            uid: userId,
+        // Create / update profile in Firestore
+        let profile: UserProfile | null = null;
+        try {
+          profile = await createOrUpdateUserProfile(userId, {
+            full_name: targetName,
             email: cleanEmail,
-            displayName: targetName,
-          };
-
-          setCurrentUser(activeUser);
-          setUserProfile(profile);
-          localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(profile));
-
-          if (targetCompany) {
-            getCompanyById(targetCompany).then((c) => {
-              if (c) setCurrentCompany(c);
-            });
-          }
-          return;
-        } catch (anonErr: any) {
-          console.error('Anonymous auth fallback error:', anonErr);
-          const userId = authoritativeProfile?.id || `uid-${targetName.toLowerCase()}`;
-
-          const localProfile: UserProfile = {
+            role: targetRole,
+            company_id: targetCompany,
+            is_active: true,
+            permissions: authoritativeProfile?.permissions,
+          });
+        } catch (e) {
+          console.warn('Could not write to firestore directly:', e);
+          profile = {
             id: userId,
             full_name: targetName,
             email: cleanEmail,
@@ -504,23 +479,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             updated_at: new Date().toISOString(),
             permissions: authoritativeProfile?.permissions,
           };
-
-          const localUser: any = {
-            uid: userId,
-            email: cleanEmail,
-            displayName: targetName,
-          };
-
-          setCurrentUser(localUser);
-          setUserProfile(localProfile);
-          localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(localProfile));
-          if (targetCompany) {
-            getCompanyById(targetCompany).then((c) => {
-              if (c) setCurrentCompany(c);
-            });
-          }
-          return;
         }
+
+        const activeUser: any = fbUser || {
+          uid: userId,
+          email: cleanEmail,
+          displayName: targetName,
+        };
+
+        setCurrentUser(activeUser);
+        setUserProfile(profile);
+        localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(profile));
+
+        if (targetCompany) {
+          getCompanyById(targetCompany).then((c) => {
+            if (c) setCurrentCompany(c);
+          });
+        }
+        return;
       }
 
       // Otherwise re-throw error for normal handling
@@ -561,9 +537,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         err.code === 'auth/admin-restricted-operation'
       ) {
         let fbUser = auth.currentUser;
-        if (!fbUser) {
-          const anonCred = await signInAnonymously(auth);
-          fbUser = anonCred.user;
+        if (!fbUser && isAnonymousAuthSupported) {
+          try {
+            const anonCred = await signInAnonymously(auth);
+            fbUser = anonCred.user;
+          } catch (anonErr) {
+            isAnonymousAuthSupported = false;
+            console.warn('Anonymous auth restricted in Firebase; proceeding with registered application session.');
+          }
         }
         const userId = fbUser?.uid || `uid-${Date.now()}`;
         const profile = await createOrUpdateUserProfile(userId, {

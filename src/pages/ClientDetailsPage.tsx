@@ -69,6 +69,7 @@ import {
   getLocalNotDuplicates,
   markAsNotDuplicate,
   subscribeToClientTransfers,
+  normalizePhone,
 } from '../lib/dal';
 import { findPotentialMatchesForClientInput } from '../lib/dataQuality';
 import { RecordMergeModal } from '../components/data-quality/RecordMergeModal';
@@ -286,6 +287,22 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
     }, clientId);
     return () => unsub();
   }, [clientId]);
+
+  // All Related Leads (source converted lead, linked won leads, repeat opportunities)
+  const relatedLeads = useMemo(() => {
+    if (!client) return [];
+    const clientPhone = normalizePhone(client.phone);
+    return allLeads.filter((l) => {
+      if (l.record_status === 'deleted') return false;
+      if (l.client_id === client.id) return true;
+      if (l.source_client_id === client.id) return true;
+      if (l.converted_to_client_id === client.id) return true;
+      if (client.source_lead_id && l.id === client.source_lead_id) return true;
+      if (client.related_lead_ids && client.related_lead_ids.includes(l.id)) return true;
+      if (clientPhone && l.normalized_phone && l.normalized_phone === clientPhone) return true;
+      return false;
+    });
+  }, [allLeads, client]);
 
   // Repeat Opportunities derived from leads where source_client_id === client.id
   const repeatOpportunities = useMemo(() => {
@@ -575,7 +592,7 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition cursor-pointer"
             >
               <UserCheck className="h-3.5 w-3.5 text-indigo-600" />
-              <span>Transfer</span>
+              <span>Transfer Client</span>
             </button>
           )}
 
@@ -1016,6 +1033,7 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
 
           <button
             type="button"
+            id="client-related-leads-tab-btn"
             onClick={() => setActiveTab('opportunities')}
             className={`flex items-center gap-2 py-3 px-3 sm:px-4 text-xs sm:text-sm font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === 'opportunities'
@@ -1024,10 +1042,29 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
             }`}
           >
             <Sparkles className="h-4 w-4" />
-            <span>Repeat Opportunities</span>
-            {repeatOpportunities.length > 0 && (
+            <span>Related Leads & Opportunities</span>
+            {relatedLeads.length > 0 && (
               <span className="ml-1 rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[11px] font-bold">
-                {repeatOpportunities.length}
+                {relatedLeads.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            id="client-transfers-tab-btn"
+            onClick={() => setActiveTab('transfers')}
+            className={`flex items-center gap-2 py-3 px-3 sm:px-4 text-xs sm:text-sm font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
+              activeTab === 'transfers'
+                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50 rounded-t-xl'
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+            }`}
+          >
+            <History className="h-4 w-4" />
+            <span>Transfer History</span>
+            {clientTransfers.length > 0 && (
+              <span className="ml-1 rounded-full bg-slate-200 text-slate-700 px-2 py-0.5 text-[11px] font-bold">
+                {clientTransfers.length}
               </span>
             )}
           </button>
@@ -1310,17 +1347,17 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
         </div>
       )}
 
-      {/* TAB 4: REPEAT OPPORTUNITIES */}
+      {/* TAB 4: RELATED LEADS & REPEAT OPPORTUNITIES */}
       {activeTab === 'opportunities' && (
         <div className="space-y-6">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
-                  Repeat Business & New Sales Opportunities
+                  Related Leads & Sales Opportunities ({relatedLeads.length})
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Clients are long-term relationship accounts. When this client has a new requirement, a separate opportunity is created while preserving this customer relationship record.
+                  Complete history of all won deals, originating leads, and ongoing repeat business opportunities associated with this client account.
                 </p>
               </div>
 
@@ -1335,13 +1372,51 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
               </button>
             </div>
 
-            {/* Repeat opportunities listing */}
-            {repeatOpportunities.length === 0 ? (
+            {/* Source Converted Lead Banner if exists */}
+            {(client.source_lead_id || sourceLead) && (
+              <div className="rounded-xl border border-emerald-300 bg-gradient-to-r from-emerald-50/90 to-teal-50/60 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-2xs">
+                <div className="flex items-start gap-3">
+                  <div className="h-9 w-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-200/70 text-emerald-900">
+                        Originating Converted Lead
+                      </span>
+                      <span className="text-xs font-mono text-emerald-800">
+                        ID: {(sourceLead?.id || client.source_lead_id || '').substring(0, 10)}
+                      </span>
+                    </div>
+                    <h4 className="text-sm font-black text-slate-900 mt-1">
+                      {sourceLead?.project_name || sourceLead?.company_name || 'Original Sales Deal'}
+                    </h4>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Deal Value: <strong className="text-emerald-950 font-black">{sourceLead?.estimated_value ? `SAR ${sourceLead.estimated_value.toLocaleString()}` : 'N/A'}</strong>
+                      {' • '}
+                      Assigned Rep: <strong className="text-slate-800">{getUserDisplayName(sourceLead?.assigned_to || client.owner_id, usersList)}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => onNavigateToLead(sourceLead?.id || client.source_lead_id!)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-2xs transition cursor-pointer self-start sm:self-center shrink-0"
+                >
+                  <span>View Converted Lead</span>
+                  <ArrowUpRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Related leads listing */}
+            {relatedLeads.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/40 p-8 text-center">
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 mb-3">
                   <Sparkles className="h-6 w-6" />
                 </div>
-                <h4 className="text-sm font-bold text-emerald-950">No Repeat Opportunities Yet</h4>
+                <h4 className="text-sm font-bold text-emerald-950">No Associated Leads or Opportunities</h4>
                 <p className="text-xs text-emerald-800/80 mt-1 max-w-md mx-auto">
                   When this customer requests new products, services, or renewals, initiate a new sales opportunity to track it through the pipeline without modifying existing won deals.
                 </p>
@@ -1356,57 +1431,158 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {repeatOpportunities.map((opp) => (
-                  <div
-                    key={opp.id}
-                    className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-2xs hover:border-emerald-300 hover:shadow-xs transition space-y-3"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-100 mb-1">
-                          {opp.status}
-                        </span>
-                        <h4 className="text-sm font-bold text-slate-900">
-                          {opp.project_name || opp.company_name}
-                        </h4>
+                {relatedLeads.map((lead) => {
+                  const isSource = lead.id === client.source_lead_id || lead.id === sourceLead?.id;
+                  const isRepeat = lead.source_client_id === client.id;
+                  const relationBadge = isSource
+                    ? 'Originating Lead'
+                    : isRepeat
+                    ? 'Repeat Opportunity'
+                    : 'Associated Deal';
+
+                  return (
+                    <div
+                      key={lead.id}
+                      className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-2xs hover:border-emerald-300 hover:shadow-xs transition space-y-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
+                                isSource
+                                  ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                  : isRepeat
+                                  ? 'bg-purple-50 text-purple-800 border-purple-200'
+                                  : 'bg-slate-50 text-slate-700 border-slate-200'
+                              }`}
+                            >
+                              {relationBadge}
+                            </span>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-100">
+                              {lead.status}
+                            </span>
+                          </div>
+                          <h4 className="text-sm font-bold text-slate-900">
+                            {lead.project_name || lead.company_name}
+                          </h4>
+                        </div>
+
+                        <div className="text-right">
+                          <span className="text-[11px] text-slate-400 block font-semibold">Value</span>
+                          <span className="text-sm font-black text-slate-900">
+                            {lead.estimated_value
+                              ? `SAR ${lead.estimated_value.toLocaleString()}`
+                              : 'N/A'}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="text-right">
-                        <span className="text-[11px] text-slate-400 block font-semibold">Value</span>
-                        <span className="text-sm font-black text-slate-900">
-                          {opp.estimated_value
-                            ? `SAR ${opp.estimated_value.toLocaleString()}`
-                            : 'N/A'}
+                      <div className="grid grid-cols-2 gap-2 text-[11px] pt-2 border-t border-slate-100 text-slate-500">
+                        <div>
+                          <span className="block text-slate-400 font-medium">Priority:</span>
+                          <span className="font-bold text-slate-700">{lead.priority}</span>
+                        </div>
+                        <div>
+                          <span className="block text-slate-400 font-medium">Created:</span>
+                          <span className="font-semibold text-slate-700">
+                            {lead.created_at ? new Date(lead.created_at).toLocaleDateString() : 'N/A'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 flex items-center justify-between">
+                        <span className="text-[11px] text-slate-400">
+                          Assigned: <strong>{getUserDisplayName(lead.assigned_to, usersList)}</strong>
                         </span>
+
+                        <button
+                          type="button"
+                          onClick={() => onNavigateToLead(lead.id)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-200 transition cursor-pointer"
+                        >
+                          <span>Open Deal</span>
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
-                    <div className="grid grid-cols-2 gap-2 text-[11px] pt-2 border-t border-slate-100 text-slate-500">
-                      <div>
-                        <span className="block text-slate-400 font-medium">Priority:</span>
-                        <span className="font-bold text-slate-700">{opp.priority}</span>
+      {/* TAB 5: TRANSFER HISTORY */}
+      {activeTab === 'transfers' && (
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-2xs">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <History className="h-5 w-5 text-emerald-700" />
+                  <span>Client Ownership Transfer Audit Trail</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Complete immutable log of all sales representatives and account owners assigned to this client.
+                </p>
+              </div>
+
+              {canTransfer && (
+                <button
+                  type="button"
+                  onClick={() => setIsTransferModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 shadow-2xs transition cursor-pointer self-start sm:self-auto"
+                >
+                  <UserCheck className="h-4 w-4" />
+                  <span>Transfer Client</span>
+                </button>
+              )}
+            </div>
+
+            {clientTransfers.length === 0 ? (
+              <div className="py-12 text-center">
+                <div className="mx-auto w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 mb-3 border border-slate-100">
+                  <History className="h-6 w-6" />
+                </div>
+                <h4 className="text-sm font-bold text-slate-700">No ownership transfers recorded</h4>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+                  This client is currently managed by{' '}
+                  <strong className="text-slate-800">{client.owner_name || 'Unassigned'}</strong>. Any future reassignments will be logged here with timestamps and audit reasons.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-6 divide-y divide-slate-100">
+                {clientTransfers.map((tr) => (
+                  <div key={tr.id} className="py-4 first:pt-0 last:pb-0 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-800 flex items-center justify-center font-bold text-xs shrink-0 border border-emerald-100">
+                        <History className="h-4 w-4" />
                       </div>
                       <div>
-                        <span className="block text-slate-400 font-medium">Created:</span>
-                        <span className="font-semibold text-slate-700">
-                          {opp.created_at ? new Date(opp.created_at).toLocaleDateString() : 'N/A'}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800">
+                          <span className="text-slate-500">From:</span>
+                          <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md text-xs font-bold">
+                            {tr.from_user_name || tr.previous_owner_name || 'Unassigned'}
+                          </span>
+                          <span className="text-slate-400 font-bold">&rarr;</span>
+                          <span className="text-slate-500">To:</span>
+                          <span className="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-md text-xs font-bold border border-emerald-200">
+                            {tr.to_user_name || tr.new_owner_name || 'New Rep'}
+                          </span>
+                        </div>
+                        {tr.reason && (
+                          <p className="text-xs text-slate-600 mt-1 italic">
+                            &ldquo;{tr.reason}&rdquo;
+                          </p>
+                        )}
+                        <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1">
+                          <span>Transferred by: <strong className="text-slate-600">{tr.transferred_by_name || 'Administrator'}</strong></span>
+                          <span>&bull;</span>
+                          <span>{new Date(tr.transferred_at || tr.timestamp || Date.now()).toLocaleString()}</span>
+                        </div>
                       </div>
-                    </div>
-
-                    <div className="pt-2 flex items-center justify-between">
-                      <span className="text-[11px] text-slate-400">
-                        Assigned: <strong>{getUserDisplayName(opp.assigned_to, usersList)}</strong>
-                      </span>
-
-                      <button
-                        type="button"
-                        onClick={() => onNavigateToLead(opp.id)}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-200 transition cursor-pointer"
-                      >
-                        <span>Open Deal</span>
-                        <ArrowUpRight className="h-3.5 w-3.5" />
-                      </button>
                     </div>
                   </div>
                 ))}
@@ -1416,7 +1592,7 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
         </div>
       )}
 
-      {/* TAB 5: ACCOUNT PROFILE & SOURCE AUDIT */}
+      {/* TAB 6: ACCOUNT PROFILE & SOURCE AUDIT */}
       {activeTab === 'profile' && (
         <div className="space-y-6">
           {/* Historical Source Lead Anchor */}
@@ -1671,8 +1847,8 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
         client={client}
       />
 
-      {/* Transfer Ownership Modal (Admin Only) */}
-      {isAdmin && (
+      {/* Transfer Ownership Modal */}
+      {canTransfer && (
         <TransferClientModal
           isOpen={isTransferModalOpen}
           onClose={() => setIsTransferModalOpen(false)}

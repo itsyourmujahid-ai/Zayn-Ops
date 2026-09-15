@@ -46,6 +46,7 @@ export type ActivityType =
   | 'Status Change'
   | 'Priority Change'
   | 'Assignment'
+  | 'Transfer'
   | 'Lead Created'
   | 'Attachment Uploaded'
   | 'Attachment Deleted'
@@ -410,6 +411,7 @@ export interface LeadRecord {
   converted_by?: string; // UID of user who performed conversion
   // Phase P: Repeat Business Relationship Link
   source_client_id?: string; // Safe reference if this lead is a repeat opportunity from an existing client
+  client_id?: string; // Direct link to parent client entity
   // Phase R: Advanced Tagging
   tags?: string[];
   // Phase S: Duplicate Detection & Safe Merge + Phase X Soft Deletion
@@ -431,24 +433,39 @@ export interface LeadRecord {
  * Client document in Firestore: `clients/{clientId}`
  * Phase O — Client Management Foundation & Sales Closing
  */
-export type ClientStatus = 'Active' | 'Inactive';
+export type ClientStatus = 'Active' | 'Inactive' | 'Potential' | 'Archived';
+export type ClientSource =
+  | 'Salesman'
+  | 'Referral'
+  | 'Website'
+  | 'WhatsApp'
+  | 'Facebook'
+  | 'Instagram'
+  | 'Import'
+  | 'Existing Customer'
+  | 'Direct Customer'
+  | 'Converted Won Lead'
+  | 'Other'
+  | string;
 
 export interface ClientRecord {
   id: string;
   company_id?: string; // Tenant company boundary
-  company_name: string;
+  name?: string; // Client representative name (mirrored with contact_person)
   contact_person?: string;
+  company_name: string;
   phone?: string;
   whatsapp?: string;
   email?: string;
   location?: string;
   address?: string;
   client_type?: string;
-  source?: string; // 'Converted Lead' | 'Direct Customer' | 'Referral' | etc.
+  source?: ClientSource;
   source_lead_id?: string; // Direct link to immutable source lead (if converted from lead)
+  related_lead_ids?: string[]; // IDs of related leads/projects
   owner_id: string; // Responsible salesman UID
   owner_name?: string; // Denormalized salesman display name
-  status: ClientStatus; // 'Active' | 'Inactive'
+  status: ClientStatus; // 'Active' | 'Inactive' | 'Potential' | 'Archived'
   notes?: string;
   created_by?: string;
   created_by_name?: string;
@@ -457,10 +474,12 @@ export interface ClientRecord {
   converted_at?: string; // ISO timestamp of conversion
   created_at: string; // ISO string
   updated_at: string; // ISO string
+  last_activity_at?: string; // ISO string of most recent activity
+  last_communication_at?: string; // ISO string of most recent communication
   // Phase R: Advanced Tagging
   tags?: string[];
   // Phase S: Duplicate Detection & Safe Merge
-  record_status?: 'active' | 'merged';
+  record_status?: 'active' | 'merged' | 'archived' | 'deleted';
   merged_into_id?: string;
   merged_at?: string;
   merged_by?: string;
@@ -493,6 +512,38 @@ export interface LeadTransferRecord {
   transferred_at: string; // ISO string
   timestamp?: string;
   reason?: string;
+}
+
+export type TransferRecordType = 'LEAD' | 'CLIENT';
+
+/**
+ * Unified Transfer Record used across Communication Hub and Transfer Auditing
+ */
+export interface TransferRecord {
+  id: string;
+  company_id: string;
+  record_type: TransferRecordType;
+  record_id: string;
+  record_name: string;
+  from_user_id: string;
+  from_user_name: string;
+  to_user_id: string;
+  to_user_name: string;
+  transferred_by: string;
+  transferred_by_name: string;
+  reason: string;
+  transferred_at: string;
+  timestamp?: string;
+}
+
+export interface TransferLeadInput {
+  lead_id: string;
+  new_owner?: string;
+  new_owner_id?: string;
+  new_owner_name?: string;
+  previous_owner?: string;
+  previous_owner_name?: string;
+  reason: string;
 }
 
 /**
@@ -798,23 +849,17 @@ export interface CreateLeadInput {
   lost_reason?: string;
   assigned_to?: string; // Optional: Admin can assign to specific salesman; Salesman defaults to self
   source_client_id?: string; // Phase P: Safe reference to source client for repeat opportunities
+  client_id?: string; // Direct link to client account
+  converted_to_client_id?: string;
   tags?: string[];
 }
 
 export type UpdateLeadInput = Partial<Omit<LeadRecord, 'id' | 'created_by' | 'created_at' | 'updated_at'>>;
 
-export interface TransferLeadInput {
-  lead_id: string;
-  new_owner: string;
-  new_owner_name?: string;
-  previous_owner: string;
-  previous_owner_name?: string;
-  reason?: string;
-}
-
 export interface CreateClientInput {
   name?: string;
   company_name: string;
+  company_id?: string;
   contact_person?: string;
   phone: string;
   whatsapp?: string;
@@ -918,11 +963,14 @@ export interface CancelFollowUpInput {
 export interface CreateClientFromLeadInput {
   lead_id: string;
   company_name: string;
+  name?: string;
   contact_person?: string;
   phone?: string;
   whatsapp?: string;
   email?: string;
   location?: string;
+  address?: string;
+  source?: string;
   client_type?: string;
   owner_id: string; // Must follow lead assigned_to
   status?: ClientStatus;
@@ -939,6 +987,8 @@ export interface UpdateClientInput {
   client_type?: string;
   status?: ClientStatus;
   notes?: string;
+  owner_id?: string;
+  related_lead_ids?: string[];
 }
 
 export interface TransferClientInput {
@@ -1196,5 +1246,82 @@ export interface ScheduleConflictDetail {
   requestedTimeSlot: string;
   reason: string;
 }
+
+// ======================================================================
+// Target Management System Data Models
+// ======================================================================
+
+export type TargetType =
+  | 'LEADS_MANAGED'
+  | 'LEADS_WON'
+  | 'CLIENTS_ADDED'
+  | 'FOLLOWUPS_COMPLETED'
+  | 'ACTIVITIES_COMPLETED';
+
+export type TargetPeriodType = 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'CUSTOM';
+
+export type TargetStatus = 'ACTIVE' | 'ARCHIVED' | 'COMPLETED';
+
+export interface TargetRevisionHistory {
+  previous_value: number;
+  updated_at: string;
+  updated_by: string;
+  updated_by_name: string;
+  reason?: string;
+}
+
+/**
+ * Commercial Target Record in Firestore: `targets/{targetId}`
+ */
+export interface TargetRecord {
+  id: string;
+  company_id: string;
+  salesman_id: string;
+  salesman_name: string;
+  target_type: TargetType;
+  target_value: number;
+  period_type: TargetPeriodType;
+  start_date: string; // ISO or YYYY-MM-DD
+  end_date: string; // ISO or YYYY-MM-DD
+  created_by: string;
+  created_by_name: string;
+  created_at: string;
+  updated_at: string;
+  status: TargetStatus;
+  notes?: string;
+  history?: TargetRevisionHistory[];
+}
+
+export interface CreateTargetInput {
+  salesman_id: string;
+  salesman_name?: string;
+  target_type: TargetType;
+  target_value: number;
+  period_type: TargetPeriodType;
+  start_date: string;
+  end_date: string;
+  notes?: string;
+}
+
+export interface UpdateTargetInput {
+  target_id?: string;
+  target_value?: number;
+  period_type?: TargetPeriodType;
+  start_date?: string;
+  end_date?: string;
+  status?: TargetStatus;
+  notes?: string;
+  reason?: string;
+}
+
+export interface TargetProgressResult {
+  current: number;
+  target: number;
+  percentage: number;
+  remaining: number;
+  status: 'Not Started' | 'In Progress' | 'Achieved' | 'Overachieved';
+  statusColor: string;
+}
+
 
 

@@ -447,19 +447,21 @@ service cloud.firestore {
                     request.resource.data.company_name is string &&
                     request.resource.data.company_name.size() > 0 &&
                     request.resource.data.owner_id is string &&
-                    (!('status' in request.resource.data) || request.resource.data.status in ['Active', 'Inactive']) &&
+                    (!('status' in request.resource.data) || request.resource.data.status in ['Active', 'Inactive', 'Potential', 'Archived']) &&
                     (
                       isAdmin() ||
-                      request.resource.data.owner_id == request.auth.uid
+                      request.resource.data.owner_id == request.auth.uid ||
+                      request.resource.data.owner_id == 'unassigned'
                     );
 
-      allow update: if isAuthenticated() && isActive() && belongsToCompany(resource.data) && (
+      allow update: if isAuthenticated() && isActive() && belongsToCompany(resource.data) &&
+                    (!('company_id' in request.resource.data) || request.resource.data.company_id == resource.data.company_id) && (
         isAdmin() ||
         (
           hasPermission('CLIENTS_EDIT') &&
           resource.data.owner_id == request.auth.uid &&
           request.resource.data.owner_id == resource.data.owner_id &&
-          (!('status' in request.resource.data) || request.resource.data.status in ['Active', 'Inactive'])
+          (!('status' in request.resource.data) || request.resource.data.status in ['Active', 'Inactive', 'Potential', 'Archived'])
         ) ||
         (
           // Client Transfer: admin, user with CLIENTS_TRANSFER, or current owner transferring
@@ -551,12 +553,34 @@ service cloud.firestore {
     }
 
     // ==========================================
-    // 16. Unique Clients Deterministic Lock (/unique_clients/{lockId})
+    // 16. Unified Transfers (/transfers/{transferId})
+    // ==========================================
+    match /transfers/{transferId} {
+      allow read: if isAuthenticated() && belongsToCompany(resource.data);
+      allow create: if isAuthenticated() && isActive() && belongsToCompany(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    // ==========================================
+    // 17. Unique Clients Deterministic Lock (/unique_clients/{lockId})
     // ==========================================
     match /unique_clients/{lockId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isActive();
       allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // ==========================================
+    // 18. Commercial Sales Targets (/targets/{targetId})
+    // ==========================================
+    match /targets/{targetId} {
+      allow read: if isAuthenticated() && belongsToCompany(resource.data) && (
+        isAdmin() ||
+        (resource.data.salesman_id == request.auth.uid)
+      );
+      allow create: if isAuthenticated() && isActive() && isAdmin() && belongsToCompany(request.resource.data);
+      allow update: if isAuthenticated() && isActive() && isAdmin() && belongsToCompany(resource.data) && belongsToCompany(request.resource.data);
+      allow delete: if isAuthenticated() && isActive() && isAdmin() && belongsToCompany(resource.data);
     }
   }
 }

@@ -19,6 +19,7 @@ import { PipelinePage } from './pages/PipelinePage';
 import { FollowupsPage } from './pages/FollowupsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { NotificationsPage } from './pages/NotificationsPage';
+import { CommunicationHubPage } from './pages/CommunicationHubPage';
 import { AuditPage } from './pages/AuditPage';
 import { DataQualityPage } from './pages/DataQualityPage';
 import { DataManagementPage } from './pages/DataManagementPage';
@@ -43,6 +44,7 @@ const AuthenticatedCRM: React.FC = () => {
   const [currentView, setCurrentView] = useState<NavigationView>('dashboard');
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [selectedSalesmanId, setSelectedSalesmanId] = useState<string | null>(null);
   const [isAddLeadModalOpen, setIsAddLeadModalOpen] = useState<boolean>(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState<boolean>(false);
   const [searchQueryParam, setSearchQueryParam] = useState<string>('');
@@ -105,9 +107,11 @@ const AuthenticatedCRM: React.FC = () => {
       case 'reports':
         return '/reports';
       case 'team':
-        return '/team';
+        return selectedSalesmanId ? `/team/${selectedSalesmanId}` : '/team';
       case 'notifications':
         return '/notifications';
+      case 'communication-hub':
+        return '/communication-hub';
       case 'data-quality':
         return '/data-quality';
       case 'data-management':
@@ -187,8 +191,20 @@ const AuthenticatedCRM: React.FC = () => {
           }
         }
 
+        if (pathname.startsWith('/team/')) {
+          const id = pathname.replace('/team/', '').trim();
+          if (id) {
+            setSelectedSalesmanId(id);
+            setSelectedLeadId(null);
+            setSelectedClientId(null);
+            setCurrentView('team');
+            return;
+          }
+        }
+
         setSelectedLeadId(null);
         setSelectedClientId(null);
+        setSelectedSalesmanId(null);
 
         if (pathname === '/leads') {
           setCurrentView('leads');
@@ -229,6 +245,25 @@ const AuthenticatedCRM: React.FC = () => {
               recordSecurityAuditLog({
                 action: 'security_unauthorized_action',
                 description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted direct URL navigation to /team.`,
+                metadata: { path: pathname, user_role: userProfile?.role || 'SALESMAN', blocked: true },
+              });
+              window.history.replaceState({}, '', '/');
+            }
+            setCurrentView('dashboard');
+          }
+        } else if (pathname === '/communication-hub') {
+          if (userProfile?.role === 'ADMIN') {
+            setCurrentView('communication-hub');
+          } else {
+            if (!isPopState) {
+              addToast(
+                'error',
+                'Access Denied',
+                'Company Administrator credentials required to access Communication Hub.'
+              );
+              recordSecurityAuditLog({
+                action: 'security_unauthorized_action',
+                description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted direct URL navigation to /communication-hub.`,
                 metadata: { path: pathname, user_role: userProfile?.role || 'SALESMAN', blocked: true },
               });
               window.history.replaceState({}, '', '/');
@@ -332,6 +367,11 @@ const AuthenticatedCRM: React.FC = () => {
     // VVIP is restricted strictly to platform governance
     if (isSuperAdmin) {
       if (view !== 'super-admin') {
+        addToast(
+          'error',
+          'Access Denied',
+          'Access Denied: Platform Administrators cannot access tenant operational communications.'
+        );
         return;
       }
     }
@@ -354,6 +394,21 @@ const AuthenticatedCRM: React.FC = () => {
         action: 'security_unauthorized_action',
         description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted unauthorized navigation to Super Admin Panel.`,
         metadata: { attempted_view: 'super-admin', user_role: userProfile?.role || 'SALESMAN', status: 'BLOCKED' },
+      });
+      return;
+    }
+
+    // Company Admin Security check for Communication Hub navigation
+    if (view === 'communication-hub' && userProfile?.role !== 'ADMIN') {
+      addToast(
+        'error',
+        'Access Denied',
+        'Company Administrator credentials required to access the Communication Hub.'
+      );
+      recordSecurityAuditLog({
+        action: 'security_unauthorized_action',
+        description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted unauthorized navigation to Communication Hub.`,
+        metadata: { attempted_view: 'communication-hub', user_role: userProfile?.role || 'SALESMAN', status: 'BLOCKED' },
       });
       return;
     }
@@ -404,6 +459,9 @@ const AuthenticatedCRM: React.FC = () => {
 
     setSelectedLeadId(null);
     setSelectedClientId(null);
+    if (view !== 'team') {
+      setSelectedSalesmanId(null);
+    }
     if (typeof window !== 'undefined' && window.history) {
       const targetUrl = getViewPath(view, searchQueryParam);
       window.history.pushState({}, '', targetUrl);
@@ -685,12 +743,35 @@ const AuthenticatedCRM: React.FC = () => {
           />
         );
       case 'team':
-        return <TeamPage onSelectLead={handleSelectLead} />;
+        return (
+          <TeamPage
+            onSelectLead={handleSelectLead}
+            onSelectClient={handleSelectClient}
+            selectedSalesmanId={selectedSalesmanId}
+            onSelectSalesman={(id) => {
+              setSelectedSalesmanId(id);
+              if (typeof window !== 'undefined' && window.history) {
+                if (id) {
+                  window.history.pushState({ salesmanId: id }, '', `/team/${id}`);
+                } else {
+                  window.history.pushState({}, '', '/team');
+                }
+              }
+            }}
+          />
+        );
       case 'notifications':
         return (
           <NotificationsPage
             onSelectLead={handleSelectLead}
             onNavigateToFollowups={() => handleViewChange('followups')}
+          />
+        );
+      case 'communication-hub':
+        return (
+          <CommunicationHubPage
+            onSelectLead={handleSelectLead}
+            onSelectClient={handleSelectClient}
           />
         );
       case 'audit':
@@ -714,7 +795,17 @@ const AuthenticatedCRM: React.FC = () => {
       case 'settings':
         return <SettingsPage />;
       case 'profile':
-        return <ProfilePage onSelectLead={handleSelectLead} />;
+        return (
+          <ProfilePage
+            onSelectLead={handleSelectLead}
+            onSelectClient={handleSelectClient}
+            onNavigateToView={handleViewChange}
+            onBackToTeam={() => {
+              setSelectedSalesmanId(null);
+              handleViewChange('team');
+            }}
+          />
+        );
       case 'super-admin':
         return <SuperAdminPage />;
       case 'search':
