@@ -3,6 +3,7 @@ import { NavigationView } from '../../types/crm';
 import { Sidebar } from './Sidebar';
 import { TopHeader } from './TopHeader';
 import { BottomNav } from './BottomNav';
+import { AmbientBackground } from '../common/AmbientBackground';
 
 interface AppLayoutProps {
   currentView: NavigationView;
@@ -23,8 +24,19 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 }) => {
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState<boolean>(false);
 
+  // Determine ambient intensity: detail views & dense settings use 'minimal'; overview uses 'subtle'
+  const isMinimalView =
+    currentView === 'settings' ||
+    currentView === 'audit' ||
+    currentView === 'data-quality' ||
+    currentView === 'data-management';
+  const ambientIntensity = isMinimalView ? 'minimal' : 'subtle';
+
   return (
-    <div className="flex min-h-screen bg-[var(--bg-base)] text-[var(--text-main)] transition-colors duration-200">
+    <div className="relative flex min-h-screen bg-[var(--bg-base)] text-[var(--text-main)] transition-colors duration-200">
+      {/* Interactive Ambient Background Layer */}
+      <AmbientBackground intensity={ambientIntensity} showAccent={true} />
+
       {/* Desktop & Tablet Sidebar */}
       <Sidebar
         currentView={currentView}

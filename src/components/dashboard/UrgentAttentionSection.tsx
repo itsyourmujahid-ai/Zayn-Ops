@@ -201,7 +201,7 @@ export const UrgentAttentionSection: React.FC<UrgentAttentionSectionProps> = ({
                       </span>
                       <span>•</span>
                       <span className="flex items-center gap-1 text-slate-600">
-                        <User className="h-3.5 w-3.5 text-slate-400" />
+                        <User className="h-3.5 w-3.5 text-slate-500" />
                         Salesman: <strong className="text-slate-800">{salesmanName}</strong>
                       </span>
                       <span>•</span>
@@ -265,7 +265,7 @@ export const UrgentAttentionSection: React.FC<UrgentAttentionSectionProps> = ({
                   <div className="flex items-center gap-2 flex-wrap">
                     <span
                       onClick={() => onSelectLead && onSelectLead(lead.id)}
-                      className="text-sm font-bold text-slate-900 hover:text-indigo-600 cursor-pointer transition truncate"
+                      className="text-sm font-bold text-slate-900 hover:text-[#0CB675] cursor-pointer transition truncate"
                     >
                       {lead.company_name}
                     </span>

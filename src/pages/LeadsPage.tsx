@@ -361,10 +361,10 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
               id="btn-export-leads-csv"
               type="button"
               onClick={handleExportCSV}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer shadow-2xs shrink-0"
+              className="zaynops-btn-secondary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5 cursor-pointer shrink-0"
               title="Export filtered leads to CSV spreadsheet"
             >
-              <Download className="h-4 w-4 text-slate-500" />
+              <Download className="h-3.5 w-3.5 text-slate-500" strokeWidth={1.75} />
               <span>Export CSV</span>
             </button>
           )}
@@ -373,10 +373,10 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
               id="btn-add-lead-top"
               type="button"
               onClick={onOpenAddLead}
-              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs sm:text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition cursor-pointer shrink-0"
+              className="zaynops-btn-primary py-1.5 px-3.5 text-xs font-semibold flex items-center gap-1.5 cursor-pointer shrink-0"
             >
-              <Plus className="h-4 w-4" />
-              <span>+ Add Lead</span>
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+              <span>Add Lead</span>
             </button>
           )}
         </div>
@@ -625,10 +625,10 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
                           <button
                             type="button"
                             onClick={onOpenAddLead}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 transition cursor-pointer"
+                            className="zaynops-btn-primary py-2 px-4 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
                           >
-                            <Plus className="h-3.5 w-3.5" />
-                            <span>+ Add First Lead</span>
+                            <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                            <span>Add First Lead</span>
                           </button>
                         )}
                       </div>
@@ -653,7 +653,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
                         id={`lead-row-${lead.id}`}
                         onClick={() => handleLeadRowClick(lead)}
                         className={`transition group cursor-pointer ${
-                          selectedLeadIds.has(lead.id) ? 'bg-indigo-50/70' : 'hover:bg-indigo-50/40'
+                          selectedLeadIds.has(lead.id) ? 'bg-emerald-50/60' : 'hover:bg-slate-50/80'
                         }`}
                         title="Click to view lead details"
                       >
@@ -669,13 +669,13 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
                             checked={selectedLeadIds.has(lead.id)}
                             onChange={() => toggleLeadSelect(lead.id)}
                             aria-label={`Select ${lead.company_name}`}
-                            className="h-4 w-4 rounded-sm border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            className="h-4 w-4 rounded-sm border-slate-300 text-[#0CB675] focus:ring-[#0CB675] cursor-pointer"
                           />
                         </td>
 
                         {/* Company / Account */}
                         <td className="px-4 py-3.5 sm:px-6">
-                          <div className="font-semibold text-slate-900 group-hover:text-indigo-600 transition flex items-center gap-2">
+                          <div className="font-semibold text-slate-900 group-hover:text-[#0CB675] transition flex items-center gap-2">
                             <span>{lead.company_name}</span>
                             {lead.estimated_value && lead.estimated_value > 0 ? (
                               <span className="inline-flex items-center text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-200">
@@ -684,8 +684,8 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
                             ) : null}
                           </div>
                           {lead.next_action && (
-                            <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
-                              <span className="text-slate-400 font-medium">Next:</span>
+                            <div className="text-[11px] text-slate-600 mt-0.5 flex items-center gap-1">
+                              <span className="text-slate-500 font-medium">Next:</span>
                               <span className="truncate max-w-[180px]">{lead.next_action}</span>
                             </div>
                           )}
@@ -694,10 +694,10 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
                         {/* Contact Person & Contact Numbers */}
                         <td className="px-4 py-3.5">
                           <div className="text-xs font-medium text-slate-900 flex items-center gap-1">
-                            <User className="h-3 w-3 text-slate-400" />
+                            <User className="h-3 w-3 text-slate-500" />
                             <span>{lead.contact_person || 'No Contact Person'}</span>
                           </div>
-                          <div className="text-xs text-slate-500 mt-0.5 font-mono">
+                          <div className="text-xs text-slate-600 mt-0.5 font-mono">
                             {lead.phone || lead.whatsapp || lead.email || '—'}
                           </div>
                         </td>
@@ -712,7 +712,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
                         {/* Location */}
                         <td className="px-4 py-3.5">
                           <div className="flex items-center gap-1 text-xs text-slate-700">
-                            <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
+                            <MapPin className="h-3 w-3 text-slate-500 shrink-0" />
                             <span className="truncate max-w-[120px]">
                               {lead.location || '—'}
                             </span>
@@ -736,8 +736,8 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
                         {/* Admin Assigned Salesman Column */}
                         {isAdmin && (
                           <td className="px-4 py-3.5">
-                            <div className="inline-flex items-center gap-1.5 rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-900 border border-indigo-200">
-                              <UserCheck className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                            <div className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-800 border border-slate-200">
+                              <UserCheck className="h-3.5 w-3.5 text-[#0CB675] shrink-0" />
                               <span className="truncate max-w-[120px] font-semibold">
                                 {assignedSalesmanName}
                               </span>
@@ -747,8 +747,8 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({
 
                         {/* Created Date */}
                         <td className="px-4 py-3.5">
-                          <div className="flex items-center gap-1 text-xs text-slate-500">
-                            <Clock className="h-3 w-3 text-slate-400 shrink-0" />
+                          <div className="flex items-center gap-1 text-xs text-slate-600">
+                            <Clock className="h-3 w-3 text-slate-500 shrink-0" />
                             <span>{formattedCreatedDate}</span>
                           </div>
                         </td>

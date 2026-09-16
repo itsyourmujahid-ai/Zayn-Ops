@@ -208,6 +208,209 @@ export const CLIENT_COLUMNS: ColumnDefinition[] = [
   },
 ];
 
+export const COMBINED_COLUMNS: ColumnDefinition[] = [
+  {
+    key: 'company_name',
+    label: 'Company Name',
+    required: true,
+    aliases: ['company name', 'company', 'organization', 'client name', 'account name', 'business'],
+    description: 'Official company or client organization name (Required)',
+    category: 'company',
+  },
+  {
+    key: 'contact_person',
+    label: 'Contact Person',
+    required: false,
+    aliases: ['contact person', 'contact name', 'person', 'contact', 'primary contact', 'poc', 'representative'],
+    description: 'Full name of key decision maker or contact person',
+    category: 'contact',
+  },
+  {
+    key: 'phone',
+    label: 'Phone',
+    required: false,
+    aliases: ['phone', 'mobile', 'telephone', 'tel', 'cell', 'contact number', 'phone number'],
+    description: 'Primary telephone or direct mobile (e.g. +968 91234567 or 91234567)',
+    category: 'contact',
+  },
+  {
+    key: 'whatsapp',
+    label: 'WhatsApp',
+    required: false,
+    aliases: ['whatsapp', 'wa', 'whatsapp number', 'wa number', 'whatsapp mobile'],
+    description: 'Direct WhatsApp communication line',
+    category: 'contact',
+  },
+  {
+    key: 'email',
+    label: 'Email',
+    required: false,
+    aliases: ['email', 'email address', 'e-mail', 'mail'],
+    description: 'Authorized corporate or contact email address',
+    category: 'contact',
+  },
+  {
+    key: 'location',
+    label: 'Location',
+    required: false,
+    aliases: ['location', 'city', 'area', 'region', 'address', 'governorate'],
+    description: 'Headquarters or project city / region (e.g. Muscat, Sohar)',
+    category: 'company',
+  },
+  {
+    key: 'address',
+    label: 'Address',
+    required: false,
+    aliases: ['address', 'office address', 'building', 'street'],
+    description: 'Street address or office premises details',
+    category: 'company',
+  },
+  {
+    key: 'client_status',
+    label: 'Client Status',
+    required: false,
+    aliases: ['client status', 'account status', 'active status'],
+    description: 'Active or Inactive (defaults to Active)',
+    category: 'client',
+  },
+  {
+    key: 'tags',
+    label: 'Tags',
+    required: false,
+    aliases: ['tags', 'tag', 'labels', 'categories', 'segment tags'],
+    description: 'Comma-separated tags (e.g. VIP, High Value, Architectural)',
+    category: 'client',
+  },
+  {
+    key: 'assigned_salesman',
+    label: 'Salesman / Owner',
+    required: false,
+    aliases: ['salesman', 'sales rep', 'owner', 'assigned salesman', 'assigned to', 'rep', 'rep name'],
+    description: 'Name or email of assigned company sales representative',
+    category: 'ownership',
+  },
+  {
+    key: 'lead_type',
+    label: 'Lead / Client Type',
+    required: false,
+    aliases: ['lead type', 'type', 'category', 'client type', 'customer type'],
+    description: 'Interior Designer, Contractor, Architect, Commercial Client, Direct Client, etc.',
+    category: 'lead',
+  },
+  {
+    key: 'source',
+    label: 'Source',
+    required: false,
+    aliases: ['source', 'lead source', 'channel', 'origin', 'referral source'],
+    description: 'Referral, Website, WhatsApp, Walk-in, Google, Social Media, etc.',
+    category: 'lead',
+  },
+  {
+    key: 'priority',
+    label: 'Deal Priority',
+    required: false,
+    aliases: ['priority', 'urgency', 'rating', 'temperature'],
+    description: 'Hot, Warm, or Cold (defaults to Warm)',
+    category: 'lead',
+  },
+  {
+    key: 'status',
+    label: 'Lead Stage',
+    required: false,
+    aliases: ['status', 'stage', 'pipeline stage', 'lead status'],
+    description: 'New, Contacted, Interested, Meeting, Quotation, Negotiation, Won, or Lost',
+    category: 'lead',
+  },
+  {
+    key: 'project_name',
+    label: 'Project Name',
+    required: false,
+    aliases: ['project name', 'project', 'site name', 'development', 'opportunity'],
+    description: 'Associated project, development, or opportunity name',
+    category: 'lead',
+  },
+  {
+    key: 'project_type',
+    label: 'Project Type',
+    required: false,
+    aliases: ['project type', 'building type', 'development type'],
+    description: 'Residential, Commercial, Industrial, Hospitality, Retail, etc.',
+    category: 'lead',
+  },
+  {
+    key: 'project_location',
+    label: 'Project Location',
+    required: false,
+    aliases: ['project location', 'site location', 'site address'],
+    description: 'Site address or location of the project',
+    category: 'lead',
+  },
+  {
+    key: 'requirement',
+    label: 'Requirement',
+    required: false,
+    aliases: ['requirement', 'requirements', 'scope', 'needed services', 'product requested'],
+    description: 'Products or services needed by client',
+    category: 'lead',
+  },
+  {
+    key: 'estimated_value',
+    label: 'Estimated Value',
+    required: false,
+    aliases: ['estimated value', 'value', 'deal value', 'budget', 'amount'],
+    description: 'Estimated deal value in OMR (numbers only, e.g. 15000)',
+    category: 'lead',
+  },
+  {
+    key: 'expected_closing_date',
+    label: 'Expected Closing Date',
+    required: false,
+    aliases: ['expected closing date', 'closing date', 'target date'],
+    description: 'Target closing date in YYYY-MM-DD format (e.g. 2026-11-30)',
+    category: 'lead',
+  },
+  {
+    key: 'next_followup_date',
+    label: 'Next Follow-up Date',
+    required: false,
+    aliases: ['next follow-up date', 'next followup', 'follow up date', 'followup date'],
+    description: 'Scheduled follow-up date in YYYY-MM-DD format',
+    category: 'lead',
+  },
+  {
+    key: 'notes',
+    label: 'Notes',
+    required: false,
+    aliases: ['notes', 'remarks', 'comments', 'description', 'details'],
+    description: 'General remarks, communication notes or specifications',
+    category: 'company',
+  },
+];
+
+/**
+ * Creates Excel guide sheet data
+ */
+function createGuideSheet(importType: 'leads' | 'clients' | 'clients_and_leads') {
+  const guideRows = [
+    ['ZaynOps Business Data Migration Guide', ''],
+    ['Generated For', importType.toUpperCase().replace(/_/g, ' ')],
+    ['', ''],
+    ['Column Rule', 'Guidance & Expected Formats'],
+    ['Company Name', 'MANDATORY. Must not be empty. Used as secondary duplicate identifier.'],
+    ['Phone & WhatsApp', 'Oman phone numbers (+968 9XXXXXXX, 968XXXXXXXX, or 8 digits) are auto-normalized.'],
+    ['Phone Normalization', 'Primary key for duplicate detection. E.g. "+968 91234567" matches "91234567".'],
+    ['Email', 'Optional. Must follow valid email syntax (e.g. name@domain.com).'],
+    ['Salesman / Owner', 'Name or email of team member. Unmatched reps will be prompted in the mapping step.'],
+    ['Priority Values', 'Hot, Warm, Cold (default is Warm).'],
+    ['Lead Stages', 'New, Contacted, Interested, Meeting, Quotation, Negotiation, Won, Lost (default is New).'],
+    ['Client Status', 'Active, Inactive (default is Active).'],
+    ['Estimated Value', 'Numeric currency value without symbols (e.g. 15000, not "15,000 OMR").'],
+    ['Date Formats', 'Standard YYYY-MM-DD format (e.g. 2026-10-31).'],
+    ['Clients + Leads Mode', 'Creates or links the Client record, and attaches the project Lead seamlessly.'],
+  ];
+  return XLSX.utils.aoa_to_sheet(guideRows);
+}
+
 /**
  * Downloads a clean template without fake CRM records.
  * Contains only the standardized headers and one sample instruction row.
@@ -237,13 +440,15 @@ export function downloadLeadTemplate(format: 'csv' | 'xlsx' = 'csv') {
 
   if (format === 'csv') {
     const csvContent = Papa.unparse([headers, sampleDataRow]);
-    triggerBlobDownload(csvContent, 'LeadFlow_Lead_Import_Template.csv', 'text/csv;charset=utf-8;');
+    triggerBlobDownload(csvContent, 'ZaynOps_Leads_Import_Template.csv', 'text/csv;charset=utf-8;');
   } else {
     const ws = XLSX.utils.aoa_to_sheet([headers, sampleDataRow]);
+    const guideWs = createGuideSheet('leads');
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Leads Template');
+    XLSX.utils.book_append_sheet(wb, guideWs, 'Migration Guide');
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    triggerBlobDownload(new Blob([wbout], { type: 'application/octet-stream' }), 'LeadFlow_Lead_Import_Template.xlsx');
+    triggerBlobDownload(new Blob([wbout], { type: 'application/octet-stream' }), 'ZaynOps_Leads_Import_Template.xlsx');
   }
 }
 
@@ -264,13 +469,56 @@ export function downloadClientTemplate(format: 'csv' | 'xlsx' = 'csv') {
 
   if (format === 'csv') {
     const csvContent = Papa.unparse([headers, sampleDataRow]);
-    triggerBlobDownload(csvContent, 'LeadFlow_Client_Import_Template.csv', 'text/csv;charset=utf-8;');
+    triggerBlobDownload(csvContent, 'ZaynOps_Clients_Import_Template.csv', 'text/csv;charset=utf-8;');
   } else {
     const ws = XLSX.utils.aoa_to_sheet([headers, sampleDataRow]);
+    const guideWs = createGuideSheet('clients');
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Clients Template');
+    XLSX.utils.book_append_sheet(wb, guideWs, 'Migration Guide');
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    triggerBlobDownload(new Blob([wbout], { type: 'application/octet-stream' }), 'LeadFlow_Client_Import_Template.xlsx');
+    triggerBlobDownload(new Blob([wbout], { type: 'application/octet-stream' }), 'ZaynOps_Clients_Import_Template.xlsx');
+  }
+}
+
+export function downloadCombinedTemplate(format: 'csv' | 'xlsx' = 'csv') {
+  const headers = COMBINED_COLUMNS.map((c) => c.label);
+  const sampleDataRow = [
+    'Bahwan Building Systems LLC', // Company Name
+    'Youssef Al-Harthy', // Contact Person
+    '+968 92345678', // Phone
+    '+968 92345678', // WhatsApp
+    'youssef@bahwansystems.om', // Email
+    'Muscat', // Location
+    'Building 42, Knowledge Oasis Muscat', // Address
+    'Active', // Client Status
+    'Corporate, Fitout, MEP', // Tags
+    'Saud Al-Harthy', // Salesman / Owner
+    'Contractor', // Lead / Client Type
+    'Direct Customer', // Source
+    'Hot', // Deal Priority
+    'Quotation', // Lead Stage
+    'KOM Innovation Hub Phase 2', // Project Name
+    'Commercial', // Project Type
+    'KOM, Rusayl, Muscat', // Project Location
+    'HVAC controls, acoustic ceiling panels, and boardroom fitout', // Requirement
+    '45000', // Estimated Value
+    '2026-12-15', // Expected Closing Date
+    '2026-10-01', // Next Follow-up Date
+    'Client converted from initial pilot contract. Excellent relationship history.', // Notes
+  ];
+
+  if (format === 'csv') {
+    const csvContent = Papa.unparse([headers, sampleDataRow]);
+    triggerBlobDownload(csvContent, 'ZaynOps_Combined_Clients_Leads_Template.csv', 'text/csv;charset=utf-8;');
+  } else {
+    const ws = XLSX.utils.aoa_to_sheet([headers, sampleDataRow]);
+    const guideWs = createGuideSheet('clients_and_leads');
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Clients & Leads Template');
+    XLSX.utils.book_append_sheet(wb, guideWs, 'Migration Guide');
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    triggerBlobDownload(new Blob([wbout], { type: 'application/octet-stream' }), 'ZaynOps_Combined_Clients_Leads_Template.xlsx');
   }
 }
 

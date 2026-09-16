@@ -1,20 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, AlertCircle, RefreshCw, LayoutDashboard } from 'lucide-react';
+import { Loader2, AlertCircle, RefreshCw, LayoutDashboard, ShieldCheck, Building2 } from 'lucide-react';
 import { NavigationView } from '../types/crm';
 import {
   LeadRecord,
   FollowUpRecord,
   LeadActivityRecord,
   UserProfile,
+  ClientRecord,
+  TargetRecord,
+  LeadTransferRecord,
+  ClientTransferRecord,
   CreateFollowUpInput,
   CompleteFollowUpInput,
   RescheduleFollowUpInput,
 } from '../types/database';
 import {
   subscribeToLeads,
+  subscribeToClients,
   subscribeToFollowUps,
   subscribeToAllActivities,
   subscribeToUsers,
+  subscribeToTargets,
+  subscribeToLeadTransfers,
+  subscribeToClientTransfers,
   filterActiveSalesmen,
   createFollowUp,
   completeFollowUp,
@@ -38,12 +46,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   onOpenAddLead,
   onSelectLead = () => {},
 }) => {
-  const { userProfile, isAdmin, isSalesman } = useAuth();
+  const { userProfile, isAdmin, isSalesman, isSuperAdmin } = useAuth();
 
   // Core Data States
   const [leads, setLeads] = useState<LeadRecord[]>([]);
+  const [clients, setClients] = useState<ClientRecord[]>([]);
   const [followups, setFollowups] = useState<FollowUpRecord[]>([]);
   const [activities, setActivities] = useState<LeadActivityRecord[]>([]);
+  const [targets, setTargets] = useState<TargetRecord[]>([]);
+  const [leadTransfers, setLeadTransfers] = useState<LeadTransferRecord[]>([]);
+  const [clientTransfers, setClientTransfers] = useState<ClientTransferRecord[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [activeSalesmen, setActiveSalesmen] = useState<UserProfile[]>([]);
 
@@ -56,14 +68,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [completingFollowUp, setCompletingFollowUp] = useState<FollowUpRecord | null>(null);
   const [reschedulingFollowUp, setReschedulingFollowUp] = useState<FollowUpRecord | null>(null);
 
-  // Real-time Subscriptions
+  // Real-time Subscriptions with Strict Company ID & Role Isolation
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
     setError(null);
 
+    // If Super Admin, do not pull private company CRM data
+    if (isSuperAdmin || userProfile?.role === 'SUPER_ADMIN') {
+      setLoading(false);
+      return;
+    }
+
     const userRole = userProfile?.role;
     const userId = userProfile?.id;
+    const companyId = userProfile?.company_id;
 
     // 1. Leads Subscription
     const unsubLeads = subscribeToLeads(
@@ -80,7 +99,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       userId
     );
 
-    // 2. Follow-ups Subscription
+    // 2. Clients Subscription
+    const unsubClients = subscribeToClients(
+      (updatedClients) => {
+        if (!isMounted) return;
+        setClients(updatedClients);
+      },
+      userRole,
+      (err) => {
+        console.warn('Dashboard clients subscription fallback:', err);
+      },
+      userId
+    );
+
+    // 3. Follow-ups Subscription
     const unsubFollowups = subscribeToFollowUps(
       (updatedFollowups) => {
         if (!isMounted) return;
@@ -93,7 +125,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       userId
     );
 
-    // 3. Activities Subscription
+    // 4. Activities Subscription
     const unsubActivities = subscribeToAllActivities(
       (updatedActivities) => {
         if (!isMounted) return;
@@ -106,7 +138,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       userId
     );
 
-    // 4. Users Subscription
+    // 5. Users Subscription
     const unsubUsers = subscribeToUsers(
       (updatedUsers) => {
         if (!isMounted) return;
@@ -118,14 +150,45 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       }
     );
 
+    // 6. Targets Subscription
+    const unsubTargets = subscribeToTargets(
+      companyId,
+      (updatedTargets) => {
+        if (!isMounted) return;
+        setTargets(updatedTargets);
+      },
+      userId,
+      userRole
+    );
+
+    // 7. Reassignment Transfers (Lead & Client Transfers for Admins)
+    let unsubLeadTransfers: (() => void) | undefined;
+    let unsubClientTransfers: (() => void) | undefined;
+
+    if (userRole === 'ADMIN') {
+      unsubLeadTransfers = subscribeToLeadTransfers((updatedLeadTransfers) => {
+        if (!isMounted) return;
+        setLeadTransfers(updatedLeadTransfers);
+      });
+
+      unsubClientTransfers = subscribeToClientTransfers((updatedClientTransfers) => {
+        if (!isMounted) return;
+        setClientTransfers(updatedClientTransfers);
+      });
+    }
+
     return () => {
       isMounted = false;
       unsubLeads();
+      unsubClients();
       unsubFollowups();
       unsubActivities();
       unsubUsers();
+      unsubTargets();
+      if (unsubLeadTransfers) unsubLeadTransfers();
+      if (unsubClientTransfers) unsubClientTransfers();
     };
-  }, [userProfile?.role, userProfile?.id]);
+  }, [userProfile?.role, userProfile?.id, userProfile?.company_id, isSuperAdmin]);
 
   // Modal Handlers
   const handleScheduleFollowUp = async (input: CreateFollowUpInput) => {
@@ -159,7 +222,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   };
 
   // Loading Skeleton State
-  if (loading && leads.length === 0) {
+  if (loading && leads.length === 0 && !isSuperAdmin) {
     return (
       <div className="space-y-6">
         <div className="h-14 bg-slate-100 animate-pulse rounded-xl" />
@@ -192,6 +255,40 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     );
   }
 
+  // SUPER_ADMIN Security & Data Isolation Notice
+  if (isSuperAdmin || userProfile?.role === 'SUPER_ADMIN') {
+    return (
+      <div className="space-y-6">
+        <div className="rounded-2xl border border-indigo-200 bg-linear-to-r from-indigo-900 to-slate-900 text-white p-6 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-indigo-800/80 border border-indigo-700">
+              <ShieldCheck className="h-6 w-6 text-indigo-300" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white">Super Administrator Control Plane</h2>
+              <p className="text-xs text-indigo-200 mt-0.5">
+                Multi-Tenant Isolation Enforced • Platform Governance
+              </p>
+            </div>
+          </div>
+          <p className="text-xs text-indigo-100 mt-4 max-w-2xl leading-relaxed">
+            As a Platform Super Administrator, customer CRM business data (leads, client accounts, financial quotas, and commercial pipeline negotiations) is isolated per tenant regulations. To review tenant companies, licenses, and system health, please navigate to the Super Admin Portal.
+          </p>
+          <div className="mt-5 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onSelectView('super-admin')}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+            >
+              <Building2 className="h-4 w-4" />
+              <span>Open Super Admin Console</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const showAdminDashboard = isAdmin || userProfile?.role === 'ADMIN';
   const showSalesmanDashboard = isSalesman || userProfile?.role === 'SALESMAN';
 
@@ -200,8 +297,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       {showAdminDashboard ? (
         <AdminDashboard
           leads={leads}
+          clients={clients}
           followups={followups}
           activities={activities}
+          targets={targets}
+          leadTransfers={leadTransfers}
+          clientTransfers={clientTransfers}
           salesmen={activeSalesmen}
           allUsers={allUsers}
           onOpenAddLead={onOpenAddLead}
@@ -215,8 +316,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         <SalesmanDashboard
           userProfile={userProfile}
           leads={leads}
+          clients={clients}
           followups={followups}
           activities={activities}
+          targets={targets}
           allUsers={allUsers}
           onOpenAddLead={onOpenAddLead}
           onOpenScheduleFollowUp={() => setIsScheduleModalOpen(true)}

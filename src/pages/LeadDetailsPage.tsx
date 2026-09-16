@@ -34,6 +34,7 @@ import {
   Trash2,
   X,
   History,
+  MoreVertical,
 } from 'lucide-react';
 import {
   LeadRecord,
@@ -130,8 +131,16 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
   // Deletion state
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
   const [deleteReason, setDeleteReason] = useState<string>('');
+  const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState<boolean>(false);
+
+  // RBAC for Lead Deletion: strictly ADMIN or SALESMAN with LEADS_DELETE within their company
+  const canDeleteLead =
+    !isSuperAdmin &&
+    userProfile?.role !== 'CUSTOMER' &&
+    (isAdmin || hasPermission('LEADS_DELETE'));
 
   // Modals state
   const [isLogModalOpen, setIsLogModalOpen] = useState<boolean>(false);
@@ -423,20 +432,25 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
     );
   };
 
-  // Handle Admin Lead Deletion (Phase X)
+  // Handle Lead Deletion (Part 1 - Safe Soft Delete with RBAC)
   const handleConfirmDelete = async () => {
     if (!lead) return;
+    if (deleteConfirmText.trim() !== 'DELETE') {
+      setDeleteError('Please type DELETE to confirm removal.');
+      return;
+    }
     if (!deleteReason.trim()) {
-      setDeleteError('Please specify an administrative deletion reason for compliance audit.');
+      setDeleteError('Please specify a deletion reason for compliance audit.');
       return;
     }
     try {
       setIsDeleting(true);
       setDeleteError(null);
       await deleteLead(lead.id, deleteReason.trim(), {
-        id: userProfile?.id || currentUser?.uid || 'admin',
-        name: userProfile?.full_name || currentUser?.displayName || 'Administrator',
-        role: (isSuperAdmin ? 'SUPER_ADMIN' : 'ADMIN') as any,
+        id: userProfile?.id || currentUser?.uid || 'user',
+        name: userProfile?.full_name || currentUser?.displayName || 'User',
+        role: userProfile?.role || (isAdmin ? 'ADMIN' : 'SALESMAN'),
+        company_id: userProfile?.company_id,
       });
       setIsDeleteModalOpen(false);
       onBack();
@@ -638,23 +652,100 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
             </button>
           )}
 
-          {/* Delete Lead Button (Admin or LEADS_DELETE permission) */}
-          {(isAdmin || isSuperAdmin || hasPermission('LEADS_DELETE')) && (
+          {/* Admin Direct Delete Button */}
+          {(isAdmin || hasPermission('LEADS_DELETE')) && (
             <button
               type="button"
-              id="lead-delete-btn"
+              id="admin-header-delete-lead-btn"
               onClick={() => {
                 setDeleteReason('');
+                setDeleteConfirmText('');
                 setDeleteError(null);
                 setIsDeleteModalOpen(true);
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 shadow-2xs hover:bg-rose-100 transition cursor-pointer"
-              title="Permanently remove this lead"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 shadow-2xs hover:bg-rose-100 hover:border-rose-300 transition cursor-pointer"
+              title="Delete Lead (Admin Only)"
             >
               <Trash2 className="h-3.5 w-3.5 text-rose-600" />
               <span>Delete Lead</span>
             </button>
           )}
+
+          {/* Actions / More Menu containing secondary actions */}
+          <div className="relative">
+            <button
+              type="button"
+              id="lead-actions-dropdown-btn"
+              onClick={() => setIsActionsMenuOpen(!isActionsMenuOpen)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition cursor-pointer"
+              title="More Actions"
+            >
+              <MoreVertical className="h-3.5 w-3.5 text-slate-500" />
+              <span>Actions</span>
+              <ChevronDown className="h-3 w-3 text-slate-400" />
+            </button>
+
+            {isActionsMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setIsActionsMenuOpen(false)}
+                />
+                <div className="absolute right-0 mt-1.5 w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg z-30 space-y-0.5 animate-in fade-in zoom-in-95 duration-100">
+                  {/* Manage Tags Action */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsMenuOpen(false);
+                      setIsTagModalOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    <TagIcon className="h-3.5 w-3.5 text-slate-500" />
+                    <span>Manage Tags</span>
+                  </button>
+
+                  {/* Reassign Lead Action */}
+                  {(isAdmin || isSuperAdmin || hasPermission('LEADS_REASSIGN')) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsActionsMenuOpen(false);
+                        setIsReassignModalOpen(true);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                    >
+                      <UserCheck className="h-3.5 w-3.5 text-slate-500" />
+                      <span>Reassign Lead</span>
+                    </button>
+                  )}
+
+                  {/* Semantic Danger Action: Delete Lead */}
+                  {canDeleteLead && (
+                    <>
+                      <div className="my-1 border-t border-slate-100" />
+                      <button
+                        type="button"
+                        id="lead-delete-btn"
+                        onClick={() => {
+                          setIsActionsMenuOpen(false);
+                          setDeleteReason('');
+                          setDeleteConfirmText('');
+                          setDeleteError(null);
+                          setIsDeleteModalOpen(true);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition cursor-pointer"
+                        title="Permanently remove this lead"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                        <span>Delete Lead</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Primary Log Activity Button */}
           {(isAdmin || isSuperAdmin || hasPermission('ACTIVITIES_LOG')) && (
@@ -1630,7 +1721,7 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
         />
       )}
 
-      {/* 9. Admin Delete Lead Confirmation Modal (Phase X) */}
+      {/* 9. Delete Lead Confirmation Modal */}
       {isDeleteModalOpen && lead && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
@@ -1641,7 +1732,7 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900">Delete Lead Record</h3>
-                  <p className="text-xs text-slate-500">Permanent administrative action</p>
+                  <p className="text-xs text-slate-500">Authorized deletion with audit tracking</p>
                 </div>
               </div>
               <button
@@ -1653,8 +1744,15 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
               </button>
             </div>
 
-            <div className="rounded-xl border border-rose-100 bg-rose-50/70 p-3 text-xs text-rose-800 leading-relaxed">
-              You are about to permanently delete <strong className="text-rose-950 font-semibold">{lead.company_name}</strong>. All associated activities, follow-ups, and attachments will be permanently removed. This action is irreversible and will be logged in the immutable security audit trail.
+            <div className="rounded-xl border border-rose-100 bg-rose-50/70 p-3.5 text-xs text-rose-800 leading-relaxed space-y-1.5">
+              <p>
+                Are you sure you want to delete <strong className="text-rose-950 font-semibold">{lead.company_name}</strong>?
+              </p>
+              <p className="text-slate-600 text-[11px]">
+                • The lead will be removed from all active pipelines, lists, and metrics.<br />
+                • Linked Client entities, historical activity logs, and transfer trails remain safely preserved.<br />
+                • This deletion is permanently recorded in the company audit log.
+              </p>
             </div>
 
             <div className="space-y-1.5">
@@ -1662,14 +1760,30 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
                 Reason for Deletion <span className="text-rose-500">*</span>
               </label>
               <textarea
-                rows={3}
+                rows={2}
                 value={deleteReason}
                 onChange={(e) => {
                   setDeleteReason(e.target.value);
                   if (deleteError) setDeleteError(null);
                 }}
-                placeholder="E.g., Duplicate record, invalid lead, customer requested removal..."
+                placeholder="E.g., Duplicate record, obsolete prospect, customer requested removal..."
                 className="w-full rounded-xl border border-slate-300 p-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-700">
+                Type <span className="font-mono font-bold text-rose-600">DELETE</span> to confirm <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => {
+                  setDeleteConfirmText(e.target.value);
+                  if (deleteError) setDeleteError(null);
+                }}
+                placeholder="DELETE"
+                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs font-mono font-bold text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
               />
               {deleteError && (
                 <p className="text-xs text-rose-600 font-medium">{deleteError}</p>
@@ -1688,7 +1802,7 @@ export const LeadDetailsPage: React.FC<LeadDetailsPageProps> = ({
               <button
                 type="button"
                 onClick={handleConfirmDelete}
-                disabled={isDeleting}
+                disabled={isDeleting || deleteConfirmText.trim() !== 'DELETE'}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-rose-700 transition disabled:opacity-50 cursor-pointer"
               >
                 {isDeleting ? (

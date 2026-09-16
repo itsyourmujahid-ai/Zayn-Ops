@@ -13,10 +13,12 @@ import {
   Activity,
   User,
   Check,
+  Trash2,
 } from 'lucide-react';
 import { LeadRecord, ClientRecord, LeadStatus, Priority, ClientStatus, UserProfile } from '../../types/database';
 import { BulkOperationResult } from '../../types/dataManagement';
 import { executeBulkLeadUpdate, executeBulkLeadAssignment, executeBulkClientUpdate } from '../../lib/bulkOperationsService';
+import { deleteLead } from '../../lib/dal';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 
@@ -44,7 +46,7 @@ export const BulkActionToolbar: React.FC<BulkActionToolbarProps> = (props) => {
   const { addToast } = useToast();
 
   const [activeModal, setActiveModal] = useState<
-    'status' | 'priority' | 'assign' | 'add_tag' | 'remove_tag' | 'client_status' | null
+    'status' | 'priority' | 'assign' | 'add_tag' | 'remove_tag' | 'client_status' | 'delete' | null
   >(null);
 
   // Form selections
@@ -53,6 +55,8 @@ export const BulkActionToolbar: React.FC<BulkActionToolbarProps> = (props) => {
   const [selectedSalesmanId, setSelectedSalesmanId] = useState<string>('');
   const [tagName, setTagName] = useState<string>('');
   const [selectedClientStatus, setSelectedClientStatus] = useState<ClientStatus>('Active');
+  const [deleteReason, setDeleteReason] = useState<string>('Bulk lead deletion by administrator');
+  const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
 
   // Execution state
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
@@ -157,6 +161,50 @@ export const BulkActionToolbar: React.FC<BulkActionToolbarProps> = (props) => {
     }
   };
 
+  // 4. Confirm and execute lead deletion (Admin Only)
+  const handleApplyLeadDelete = async () => {
+    if (deleteConfirmText.trim() !== 'DELETE') {
+      addToast('error', 'Confirmation Required', 'Please type DELETE to confirm removal.');
+      return;
+    }
+    setIsExecuting(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    const actor = {
+      id: userProfile?.id || currentUser?.uid || 'user',
+      name: userProfile?.full_name || currentUser?.displayName || 'Administrator',
+      role: userProfile?.role || 'ADMIN',
+      company_id: userProfile?.company_id,
+    };
+
+    for (const lead of selectedItems as LeadRecord[]) {
+      try {
+        await deleteLead(lead.id, deleteReason.trim() || 'Bulk deletion by administrator', actor);
+        successCount++;
+      } catch (e) {
+        console.error(`Failed to delete lead ${lead.id}:`, e);
+        failCount++;
+      }
+    }
+
+    setIsExecuting(false);
+    setActiveModal(null);
+    setDeleteConfirmText('');
+
+    if (successCount > 0) {
+      addToast(
+        'success',
+        'Leads Deleted',
+        `Successfully deleted ${successCount} lead${successCount > 1 ? 's' : ''}.${failCount > 0 ? ` (${failCount} failed)` : ''}`
+      );
+      onOperationComplete();
+      onClearSelection();
+    } else {
+      addToast('error', 'Deletion Failed', 'Could not delete the selected leads.');
+    }
+  };
+
   return (
     <>
       {/* Sticky Floating Bottom Bar */}
@@ -211,6 +259,24 @@ export const BulkActionToolbar: React.FC<BulkActionToolbarProps> = (props) => {
                 <Tag className="h-3.5 w-3.5 text-emerald-400" />
                 <span>+ Tag</span>
               </button>
+
+              {/* Delete Button (Strictly for Company Admin) */}
+              {isAdmin && (
+                <button
+                  type="button"
+                  id="bulk-delete-leads-btn"
+                  onClick={() => {
+                    setDeleteReason('Bulk lead deletion by administrator');
+                    setDeleteConfirmText('');
+                    setActiveModal('delete');
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600/90 hover:bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition cursor-pointer shadow-xs"
+                  title="Delete selected leads (Admin Only)"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-white" />
+                  <span>Delete</span>
+                </button>
+              )}
             </div>
           )}
 
@@ -506,6 +572,88 @@ export const BulkActionToolbar: React.FC<BulkActionToolbarProps> = (props) => {
               >
                 {isExecuting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                 <span>Update Status</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. Admin Bulk Delete Leads Modal */}
+      {activeModal === 'delete' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-100 text-rose-600 shrink-0">
+                  <AlertCircle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Delete {count} Selected Lead{count > 1 ? 's' : ''}</h3>
+                  <p className="text-xs text-slate-500">Company Administrator Action</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-rose-100 bg-rose-50/80 p-3.5 text-xs text-rose-800 leading-relaxed space-y-1">
+              <p className="font-semibold text-rose-950">
+                Are you sure you want to delete these {count} selected lead{count > 1 ? 's' : ''}?
+              </p>
+              <p className="text-slate-600 text-[11px]">
+                • The leads will be removed from all active pipelines, views, and metrics.<br />
+                • Linked Client entities, notes, and activity history remain intact.<br />
+                • The deletion is recorded in the permanent company audit trail.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-700">
+                Reason for Deletion <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="E.g., Duplicate records, obsolete contacts, bulk cleanup..."
+                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-700">
+                Type <span className="font-mono font-bold text-rose-600">DELETE</span> to confirm <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder="DELETE"
+                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs font-mono font-bold text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                disabled={isExecuting}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyLeadDelete}
+                disabled={isExecuting || deleteConfirmText.trim() !== 'DELETE'}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-rose-700 transition disabled:opacity-50 cursor-pointer"
+              >
+                {isExecuting ? 'Deleting...' : `Confirm Delete (${count})`}
               </button>
             </div>
           </div>

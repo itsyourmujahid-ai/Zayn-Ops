@@ -263,21 +263,28 @@ export function calculateTargetProgress(
   const percentage = Math.round((current / targetVal) * 100);
   const remaining = Math.max(0, targetVal - current);
 
-  let status: 'Not Started' | 'In Progress' | 'Achieved' | 'Overachieved';
+  let status: 'Not Started' | 'On Track' | 'Behind' | 'Achieved' | 'Overachieved';
   let statusColor: string;
 
   if (current === 0) {
     status = 'Not Started';
-    statusColor = 'text-slate-400 bg-slate-100 border-slate-200';
-  } else if (current < targetVal) {
-    status = 'In Progress';
-    statusColor = 'text-amber-700 bg-amber-50 border-amber-200';
+    statusColor = 'text-slate-500 bg-slate-100 border-slate-200';
   } else if (current === targetVal) {
     status = 'Achieved';
     statusColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
-  } else {
+  } else if (current > targetVal) {
     status = 'Overachieved';
     statusColor = 'text-purple-700 bg-purple-50 border-purple-200';
+  } else {
+    // Current is between 1 and targetVal - 1
+    // If progress is >= 50% or pace is healthy, mark as On Track, otherwise Behind
+    if (percentage >= 50) {
+      status = 'On Track';
+      statusColor = 'text-blue-700 bg-blue-50 border-blue-200';
+    } else {
+      status = 'Behind';
+      statusColor = 'text-amber-700 bg-amber-50 border-amber-200';
+    }
   }
 
   return {

@@ -57,15 +57,20 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
   const [followups, setFollowups] = useState<FollowUpRecord[]>([]);
   const [teamUsers, setTeamUsers] = useState<UserProfile[]>([]);
 
-  const isAdmin = userProfile?.role === 'ADMIN' || userProfile?.role === 'admin';
+  const isSuperAdmin = userProfile?.role === 'SUPER_ADMIN';
+  const isCompanyAdmin = userProfile?.role === 'ADMIN' || userProfile?.role === 'admin';
+  const isAuthorizedSalesman = userProfile?.role === 'SALESMAN' && userProfile?.permissions?.includes('IMPORT_CREATE' as any);
+  const canAccessImport = isCompanyAdmin || isAuthorizedSalesman;
+
+  const effectiveCompanyId = userProfile?.company_id || 'company-bahwan-mge';
 
   // 1. RBAC Guard: If not admin, block and log
   useEffect(() => {
-    if (userProfile && !isAdmin) {
+    if (userProfile && !canAccessImport && !isSuperAdmin) {
       addToast(
         'error',
         'Access Denied',
-        'Administrator privileges are required to access Data Management tools.'
+        'Company Administrator privileges are required to access Data Import tools.'
       );
       recordSecurityAuditLog({
         action: 'security_unauthorized_action',
@@ -73,11 +78,11 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
         metadata: { attempted_url: '/data-management', user_role: userProfile.role, status: 'BLOCKED' },
       });
     }
-  }, [userProfile, isAdmin, currentUser?.email, addToast]);
+  }, [userProfile, canAccessImport, isSuperAdmin, currentUser?.email, addToast]);
 
   // Subscribe to CRM data for validation and export
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canAccessImport) return;
 
     getAllUsers()
       .then((users) => setTeamUsers(users))
@@ -94,9 +99,28 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
       unsubActs();
       unsubFu();
     };
-  }, [isAdmin]);
+  }, [canAccessImport]);
 
-  if (!isAdmin) {
+  if (isSuperAdmin) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center p-4">
+        <div className="max-w-lg text-center rounded-2xl border border-amber-200 bg-white p-8 shadow-xs space-y-4">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
+            <ShieldCheck className="h-7 w-7" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900">Tenant Data Isolation Policy</h2>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            Super Administrators oversee platform infrastructure and company provisioning. To strictly maintain tenant segregation and client confidentiality, proprietary business data imports and CRM customer migrations must be executed directly by an authorized <strong>Company Administrator</strong> within that company's workspace.
+          </p>
+          <div className="pt-2 text-[11px] text-slate-400 font-mono">
+            Security Policy: Multi-Tenant Compliance v2.4
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!canAccessImport) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center p-4">
         <div className="max-w-md text-center rounded-2xl border border-rose-200 bg-white p-8 shadow-xs space-y-4">
@@ -105,7 +129,7 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
           </div>
           <h2 className="text-lg font-bold text-slate-900">Administrator Access Required</h2>
           <p className="text-xs text-slate-500 leading-relaxed">
-            Data Management (CSV/Excel import, CRM bulk export, and duplicate-safe ingestion) is restricted to system Administrators. This access attempt has been logged in the security audit trail.
+            Data Management and customer migrations are restricted to authorized Company Administrators. Sales representatives cannot perform bulk imports without explicit administrative permissions.
           </p>
         </div>
       </div>
@@ -177,11 +201,13 @@ export const DataManagementPage: React.FC<DataManagementPageProps> = ({
           existingLeads={leads}
           existingClients={clients}
           teamUsers={teamUsers}
+          effectiveCompanyId={effectiveCompanyId}
           onImportComplete={() => {
-            // Can switch to history tab or notify
+            // Refresh counts or trigger notifications
           }}
           onNavigateToLeads={onNavigateToLeads}
           onNavigateToClients={onNavigateToClients}
+          onNavigateToHistory={() => setActiveTab('history')}
         />
       )}
 

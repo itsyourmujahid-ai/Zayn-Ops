@@ -112,6 +112,9 @@ const LOCAL_STORAGE_NOT_DUPLICATES_KEY = 'crm_local_not_duplicates_v2';
 export const LOCAL_STORAGE_COMPANIES_KEY = 'crm_local_companies_v1';
 export const LOCAL_STORAGE_TARGETS_KEY = 'crm_local_targets_v1';
 
+// Re-export Team Communication Hub features
+export * from './teamChat';
+
 export const DEFAULT_COMPANY_ID = 'company-bahwan-mge';
 
 export const INITIAL_DEFAULT_COMPANY: CompanyRecord = {
@@ -1388,6 +1391,40 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
     return await findUserProfileByEmail(userId);
   }
 
+  // 4. Fallback to PREDEFINED_ACCOUNTS
+  const predefined = PREDEFINED_ACCOUNTS.find(
+    (a) =>
+      `uid-${a.name.toLowerCase()}` === userId ||
+      a.name.toLowerCase() === userId.toLowerCase() ||
+      a.email.toLowerCase() === userId.toLowerCase()
+  );
+  if (predefined) {
+    const slugId = `uid-${predefined.name.toLowerCase()}`;
+    return {
+      id: slugId,
+      full_name: predefined.name,
+      email: predefined.email,
+      role: predefined.role,
+      company_id: predefined.company_id || DEFAULT_COMPANY_ID,
+      is_active: true,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    };
+  }
+
+  // 5. Fallback to all users map (checking seeded and dynamically created users)
+  try {
+    const all = await getAllUsers();
+    const match = all.find(
+      (u) =>
+        u.id === userId ||
+        u.email.toLowerCase() === userId.toLowerCase() ||
+        u.full_name.toLowerCase() === userId.toLowerCase() ||
+        `uid-${u.full_name.toLowerCase()}` === userId
+    );
+    if (match) return match;
+  } catch (e) {}
+
   return null;
 }
 
@@ -1937,6 +1974,8 @@ export async function getLeads(options?: {
   if (!options?.includeMerged) {
     local = local.filter((l) => l.record_status !== 'merged');
   }
+  // Exclude soft-deleted leads by default
+  local = local.filter((l) => l.record_status !== 'deleted' && !l.deleted_at);
   if (!isUserAdmin) {
     local = local.filter((l) => l.assigned_to === userId || l.created_by === userId);
   } else if (options?.assigned_to) {
@@ -1982,6 +2021,8 @@ export function subscribeToLeads(
     if (!includeMerged) {
       filtered = filtered.filter((l) => l.record_status !== 'merged');
     }
+    // Exclude soft-deleted leads by default
+    filtered = filtered.filter((l) => l.record_status !== 'deleted' && !l.deleted_at);
     if (!isUserAdmin) {
       filtered = filtered.filter(
         (l) => l.assigned_to === userId || l.created_by === userId
@@ -2398,34 +2439,74 @@ export async function getTransferHistory(leadId: string): Promise<LeadTransferRe
 export async function deleteLead(
   leadId: string,
   reason?: string,
-  actor?: { id: string; name: string; role: UserRole }
+  actor?: { id: string; name: string; role: UserRole; company_id?: string }
 ): Promise<void> {
   const localList = getLocalLeads();
   const leadToDelete = localList.find((l) => l.id === leadId);
   const adminId = actor?.id || getEffectiveUserId();
   const adminName = actor?.name || getEffectiveUserName();
   const adminRole = actor?.role || getEffectiveUserRole();
+  const actorCompany = actor?.company_id || getEffectiveCompanyId();
+
+  // Strict role check: SUPER_ADMIN must NOT use Lead deletion to access company CRM data
+  if (adminRole === 'SUPER_ADMIN') {
+    throw new Error('Unauthorized: Platform Administrators cannot delete tenant company lead records.');
+  }
+
+  // Strict role check: CUSTOMER cannot delete leads
+  if (adminRole === 'CUSTOMER' || adminRole === 'customer') {
+    throw new Error('Unauthorized: Customer accounts cannot delete lead records.');
+  }
 
   const actorProfile = await getUserProfile(adminId);
-  const canDelete = adminRole === 'ADMIN' || adminRole === 'SUPER_ADMIN' || hasPermission(actorProfile, 'LEADS_DELETE');
+  const isCompanyAdmin = adminRole === 'ADMIN' || adminRole === 'admin';
+  const hasDeletePerm = hasPermission(actorProfile, 'LEADS_DELETE');
 
-  if (!canDelete) {
+  if (!isCompanyAdmin && !hasDeletePerm) {
     throw new Error('Unauthorized: You do not have permission to delete leads (LEADS_DELETE required).');
   }
 
-  // Update local cache
-  const updatedList = localList.filter((l) => l.id !== leadId);
+  // Multi-tenant boundary check
+  if (leadToDelete?.company_id && actorCompany && leadToDelete.company_id !== actorCompany) {
+    throw new Error('Unauthorized: You can only delete leads belonging to your own company.');
+  }
+
+  const now = new Date().toISOString();
+
+  // Soft deletion: update lead status to 'deleted' with timestamps and deleter info
+  // CRITICAL SAFETY: All linked clients, activities, follow-ups, and transfer history remain intact.
+  const updatedList = localList.map((l) => {
+    if (l.id === leadId) {
+      return {
+        ...l,
+        record_status: 'deleted' as const,
+        deleted_at: now,
+        deleted_by: adminId,
+        deleted_by_name: adminName,
+        delete_reason: reason || 'Lead Deletion',
+        updated_at: now,
+      };
+    }
+    return l;
+  });
   setLocalLeads(updatedList);
   notifyLeadsChanged();
 
   try {
     const leadDocRef = doc(db, 'leads', leadId);
-    await deleteDoc(leadDocRef);
+    await updateDoc(leadDocRef, {
+      record_status: 'deleted',
+      deleted_at: now,
+      deleted_by: adminId,
+      deleted_by_name: adminName,
+      delete_reason: reason || 'Lead Deletion',
+      updated_at: now,
+    });
   } catch (err) {
-    console.warn('Firestore deleteLead fallback notice:', err);
+    console.warn('Firestore soft deleteLead fallback notice:', err);
   }
 
-  // Phase M: Administrative Audit Log
+  // Part 1 Requirement 6: Immutable Audit Log
   try {
     await createAuditLog({
       action: 'lead_deleted',
@@ -2433,18 +2514,25 @@ export async function deleteLead(
       entity_id: leadId,
       lead_id: leadId,
       lead_company_name: leadToDelete?.company_name || 'Lead',
+      company_id: leadToDelete?.company_id || actorCompany || DEFAULT_COMPANY_ID,
       performed_by: adminId,
       performed_by_name: adminName,
-      performed_by_role: (adminRole === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN') as any,
-      description: `${adminRole === 'SUPER_ADMIN' ? 'Super Administrator' : 'Company Administrator'} ${adminName} permanently deleted Lead "${leadToDelete?.company_name || leadId}".${reason ? ` Reason: ${reason}` : ''}`,
+      performed_by_role: (isCompanyAdmin ? 'ADMIN' : 'SALESMAN') as any,
+      description: `${isCompanyAdmin ? 'Company Administrator' : 'Sales Representative'} ${adminName} deleted Lead "${leadToDelete?.company_name || leadId}".${reason ? ` Reason: ${reason}` : ''}`,
       metadata: {
-        company_id: leadToDelete?.company_id || getEffectiveCompanyId(),
-        company_name: leadToDelete?.company_name,
-        previous_status: leadToDelete?.status,
-        previous_priority: leadToDelete?.priority,
+        company_id: leadToDelete?.company_id || actorCompany || DEFAULT_COMPANY_ID,
+        record_type: 'LEAD',
+        record_id: leadId,
+        lead_name: leadToDelete?.company_name,
+        contact_person: leadToDelete?.contact_person,
+        contact_email: leadToDelete?.email,
+        contact_phone: leadToDelete?.phone,
         assigned_to: leadToDelete?.assigned_to,
-        reason: reason || 'Administrative Deletion',
-        deleted_at: new Date().toISOString(),
+        deleted_by: adminId,
+        deleted_by_name: adminName,
+        timestamp: now,
+        action: 'DELETE',
+        reason: reason || 'Lead Deletion',
       },
     });
   } catch (auditErr) {
@@ -7919,14 +8007,19 @@ export async function updateCompanySalesman(
     try {
       const raw = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
       let users: UserProfile[] = raw ? JSON.parse(raw) : [];
-      users = users.map((u) => (u.id === userId ? updatedProfile : u));
+      const idx = users.findIndex((u) => u.id === userId || (current.email && u.email.toLowerCase() === current.email.toLowerCase()));
+      if (idx >= 0) {
+        users[idx] = updatedProfile;
+      } else {
+        users.push(updatedProfile);
+      }
       localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(users));
 
       // Update active session if target is current logged in user
       const sessionRaw = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
       if (sessionRaw) {
         const sess = JSON.parse(sessionRaw);
-        if (sess?.id === userId) {
+        if (sess?.id === userId || (current.email && sess?.email?.toLowerCase() === current.email.toLowerCase())) {
           localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(updatedProfile));
         }
       }
@@ -7939,14 +8032,10 @@ export async function updateCompanySalesman(
   try {
     const userDocRef = doc(db, 'users', userId);
     const updatePayload: any = {
-      full_name: updatedProfile.full_name,
-      phone: updatedProfile.phone,
+      ...updatedProfile,
       updated_at: now,
     };
-    if (input.permissions !== undefined) {
-      updatePayload.permissions = input.permissions;
-    }
-    await updateDoc(userDocRef, updatePayload);
+    await setDoc(userDocRef, updatePayload, { merge: true });
   } catch (err) {
     console.warn('Firestore updateCompanySalesman fallback:', err);
   }
@@ -8021,14 +8110,19 @@ export async function updateCompanySalesmanPermissions(
     try {
       const raw = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
       let users: UserProfile[] = raw ? JSON.parse(raw) : [];
-      users = users.map((u) => (u.id === userId ? updatedProfile : u));
+      const idx = users.findIndex((u) => u.id === userId || (current.email && u.email.toLowerCase() === current.email.toLowerCase()));
+      if (idx >= 0) {
+        users[idx] = updatedProfile;
+      } else {
+        users.push(updatedProfile);
+      }
       localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(users));
 
       // Update active session if this is the active user
       const sessionRaw = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
       if (sessionRaw) {
         const sess = JSON.parse(sessionRaw);
-        if (sess?.id === userId) {
+        if (sess?.id === userId || (current.email && sess?.email?.toLowerCase() === current.email.toLowerCase())) {
           localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(updatedProfile));
         }
       }
@@ -8040,10 +8134,15 @@ export async function updateCompanySalesmanPermissions(
   // Update Firestore
   try {
     const userDocRef = doc(db, 'users', userId);
-    await updateDoc(userDocRef, {
-      permissions: newPermissions,
-      updated_at: now,
-    });
+    await setDoc(
+      userDocRef,
+      {
+        ...updatedProfile,
+        permissions: newPermissions,
+        updated_at: now,
+      },
+      { merge: true }
+    );
   } catch (err) {
     console.warn('Firestore updateCompanySalesmanPermissions fallback:', err);
   }
@@ -8116,7 +8215,7 @@ export async function toggleCompanySalesmanStatus(
     try {
       const raw = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
       let users: UserProfile[] = raw ? JSON.parse(raw) : [];
-      const foundIdx = users.findIndex((u) => u.id === userId);
+      const foundIdx = users.findIndex((u) => u.id === userId || (current.email && u.email.toLowerCase() === current.email.toLowerCase()));
       if (foundIdx >= 0) {
         users[foundIdx] = { ...users[foundIdx], is_active: isActive, updated_at: now };
       } else {
@@ -8130,10 +8229,15 @@ export async function toggleCompanySalesmanStatus(
   // Update Firestore
   try {
     const userDocRef = doc(db, 'users', userId);
-    await updateDoc(userDocRef, {
-      is_active: isActive,
-      updated_at: now,
-    });
+    await setDoc(
+      userDocRef,
+      {
+        ...current,
+        is_active: isActive,
+        updated_at: now,
+      },
+      { merge: true }
+    );
   } catch (err) {
     console.warn('Firestore toggleCompanySalesmanStatus fallback:', err);
   }

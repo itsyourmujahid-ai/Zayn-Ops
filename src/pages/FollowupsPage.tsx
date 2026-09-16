@@ -41,6 +41,8 @@ import {
 } from '../lib/dal';
 import { useAuth } from '../context/AuthContext';
 import { Badge } from '../components/common/Badge';
+import { LiquidButton } from '../components/liquid/LiquidButton';
+import { LiquidTabs, TabItem } from '../components/liquid/LiquidTabs';
 import { CompleteFollowUpModal } from '../components/followups/CompleteFollowUpModal';
 import { RescheduleFollowUpModal } from '../components/followups/RescheduleFollowUpModal';
 import { CancelFollowUpModal } from '../components/followups/CancelFollowUpModal';
@@ -270,10 +272,10 @@ export const FollowupsPage: React.FC<FollowupsPageProps> = ({
       {/* Page Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <span>Follow-up Management Center</span>
-            <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700 border border-indigo-200">
-              Live Real-Time
+          <h2 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
+            <span>Follow-up Management</span>
+            <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 border border-slate-200/80">
+              Live Updates
             </span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -283,171 +285,110 @@ export const FollowupsPage: React.FC<FollowupsPageProps> = ({
 
         <div className="flex items-center gap-2">
           {canCreateFollowUp && (
-            <button
+            <LiquidButton
               id="btn-schedule-new-followup"
-              type="button"
+              variant="primary"
+              size="md"
               onClick={() => setIsScheduleModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 transition cursor-pointer"
+              className="py-1.5 px-3.5 text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-[0_2px_8px_rgba(12,182,117,0.25)]"
             >
-              <CalendarPlus className="h-4 w-4" />
+              <CalendarPlus className="h-3.5 w-3.5" strokeWidth={2.5} />
               <span>Schedule Follow-up</span>
-            </button>
+            </LiquidButton>
           )}
         </div>
       </div>
 
       {/* Statistics Counter Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Overdue card */}
         <button
           type="button"
           onClick={() => setActiveTab('overdue')}
-          className={`flex flex-col rounded-2xl border p-4 text-left transition cursor-pointer ${
+          className={`flex flex-col rounded-xl border p-3.5 text-left transition cursor-pointer shadow-2xs ${
             activeTab === 'overdue'
-              ? 'border-rose-300 bg-rose-50/70 shadow-xs ring-2 ring-rose-500/20'
-              : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+              ? 'border-rose-300 bg-rose-50/50'
+              : 'border-slate-200/80 bg-white hover:border-slate-300'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-rose-700 uppercase tracking-wider">Overdue</span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
-              <AlertCircle className="h-4 w-4" />
-            </div>
+            <span className="text-[11px] font-semibold text-rose-700 uppercase tracking-wider">Overdue</span>
+            <AlertCircle className="h-4 w-4 text-rose-600" strokeWidth={1.75} />
           </div>
-          <div className="mt-2 text-2xl font-extrabold text-slate-900">{stats.overdueCount}</div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Requires immediate action</p>
+          <div className="mt-1.5 text-2xl font-bold tracking-tight text-rose-700">{stats.overdueCount}</div>
+          <p className="text-[11px] text-slate-500 mt-0.5">Requires attention</p>
         </button>
 
         {/* Today's Tasks */}
         <button
           type="button"
           onClick={() => setActiveTab('today')}
-          className={`flex flex-col rounded-2xl border p-4 text-left transition cursor-pointer ${
+          className={`flex flex-col rounded-xl border p-3.5 text-left transition cursor-pointer shadow-2xs ${
             activeTab === 'today'
-              ? 'border-indigo-300 bg-indigo-50/70 shadow-xs ring-2 ring-indigo-500/20'
-              : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+              ? 'border-slate-400 bg-slate-50/80'
+              : 'border-slate-200/80 bg-white hover:border-slate-300'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">Today&apos;s Tasks</span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
-              <Calendar className="h-4 w-4" />
-            </div>
+            <span className="text-[11px] font-semibold text-slate-700 uppercase tracking-wider">Today&apos;s Actions</span>
+            <Calendar className="h-4 w-4 text-[#0CB675]" strokeWidth={1.75} />
           </div>
-          <div className="mt-2 text-2xl font-extrabold text-slate-900">{stats.todayCount}</div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Due before end of day</p>
+          <div className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900">{stats.todayCount}</div>
+          <p className="text-[11px] text-slate-500 mt-0.5">Scheduled for today</p>
         </button>
 
         {/* Upcoming Tasks */}
         <button
           type="button"
           onClick={() => setActiveTab('upcoming')}
-          className={`flex flex-col rounded-2xl border p-4 text-left transition cursor-pointer ${
+          className={`flex flex-col rounded-xl border p-3.5 text-left transition cursor-pointer shadow-2xs ${
             activeTab === 'upcoming'
-              ? 'border-blue-300 bg-blue-50/70 shadow-xs ring-2 ring-blue-500/20'
-              : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+              ? 'border-slate-400 bg-slate-50/80'
+              : 'border-slate-200/80 bg-white hover:border-slate-300'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-blue-700 uppercase tracking-wider">Upcoming</span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
-              <Clock className="h-4 w-4" />
-            </div>
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Upcoming</span>
+            <Clock className="h-4 w-4 text-slate-400" strokeWidth={1.75} />
           </div>
-          <div className="mt-2 text-2xl font-extrabold text-slate-900">{stats.upcomingCount}</div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Future scheduled commitments</p>
+          <div className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900">{stats.upcomingCount}</div>
+          <p className="text-[11px] text-slate-500 mt-0.5">Future commitments</p>
         </button>
 
         {/* Completed Tasks */}
         <button
           type="button"
           onClick={() => setActiveTab('completed')}
-          className={`flex flex-col rounded-2xl border p-4 text-left transition cursor-pointer ${
+          className={`flex flex-col rounded-xl border p-3.5 text-left transition cursor-pointer shadow-2xs ${
             activeTab === 'completed'
-              ? 'border-emerald-300 bg-emerald-50/70 shadow-xs ring-2 ring-emerald-500/20'
-              : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+              ? 'border-slate-400 bg-slate-50/80'
+              : 'border-slate-200/80 bg-white hover:border-slate-300'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Completed</span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
-              <CheckCircle2 className="h-4 w-4" />
-            </div>
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Completed</span>
+            <CheckCircle2 className="h-4 w-4 text-slate-400" strokeWidth={1.75} />
           </div>
-          <div className="mt-2 text-2xl font-extrabold text-slate-900">{stats.completedCount}</div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Closed touchpoints</p>
+          <div className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900">{stats.completedCount}</div>
+          <p className="text-[11px] text-slate-500 mt-0.5">Resolved touchpoints</p>
         </button>
       </div>
 
       {/* Search and Filter Controls */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        {/* Navigation Tabs */}
-        <div className="flex rounded-xl border border-slate-200 bg-white p-1 shadow-xs overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab('today')}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-              activeTab === 'today'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Calendar className="h-3.5 w-3.5" />
-            <span>Today ({stats.todayCount})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('overdue')}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-              activeTab === 'overdue'
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <AlertCircle className="h-3.5 w-3.5" />
-            <span>Overdue ({stats.overdueCount})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('upcoming')}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-              activeTab === 'upcoming'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Clock className="h-3.5 w-3.5" />
-            <span>Upcoming ({stats.upcomingCount})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('all_active')}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-              activeTab === 'all_active'
-                ? 'bg-slate-800 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <CalendarClock className="h-3.5 w-3.5" />
-            <span>All Active ({stats.overdueCount + stats.todayCount + stats.upcomingCount})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('completed')}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-              activeTab === 'completed'
-                ? 'bg-emerald-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            <span>Completed ({stats.completedCount})</span>
-          </button>
-        </div>
+        {/* Navigation Tabs with Liquid Moving Indicator */}
+        <LiquidTabs
+          layoutGroupId="followups-view-tabs"
+          activeTab={activeTab}
+          onChange={setActiveTab}
+          tabs={[
+            { id: 'today', label: 'Today', icon: Calendar, count: stats.todayCount },
+            { id: 'overdue', label: 'Overdue', icon: AlertCircle, count: stats.overdueCount, badgeClass: 'bg-rose-100 text-rose-700' },
+            { id: 'upcoming', label: 'Upcoming', icon: Clock, count: stats.upcomingCount },
+            { id: 'all_active', label: 'All Active', icon: CalendarClock, count: stats.overdueCount + stats.todayCount + stats.upcomingCount },
+            { id: 'completed', label: 'Completed', icon: CheckCircle2, count: stats.completedCount },
+          ]}
+        />
 
         {/* Search Input & Representative Filter */}
         <div className="flex items-center gap-2">

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { LeadRecord, FollowUpRecord, UserProfile, Priority } from '../../types/database';
 import { isFollowUpOverdue, isFollowUpDueToday } from '../../utils/dashboardUtils';
+import { LiquidButton } from '../liquid/LiquidButton';
 
 export interface PipelineFilterState {
   search: string;
@@ -87,101 +88,103 @@ export const PipelineHeader: React.FC<PipelineHeaderProps> = ({
       {/* Top Title & Quick Actions */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl flex items-center gap-2">
-            <span>Sales Pipeline Kanban</span>
-            <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 border border-indigo-200">
-              {isAdmin ? 'All Team Leads' : 'My Active Pipeline'}
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
+            <span>Sales Pipeline</span>
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 border border-slate-200/80">
+              {isAdmin ? 'Team Accounts' : 'My Active Pipeline'}
             </span>
           </h1>
           <p className="mt-0.5 text-xs text-slate-500">
-            Drag and drop accounts between stages to progress deals and record instant status changes.
+            Progress deals through pipeline stages to track status and deal momentum.
           </p>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          <button
+          <LiquidButton
             id="btn-add-lead-pipeline"
-            type="button"
+            variant="primary"
+            size="md"
             onClick={onOpenAddLead}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 transition cursor-pointer"
+            className="py-1.5 px-3.5 text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-[0_2px_8px_rgba(12,182,117,0.25)]"
           >
-            <Plus className="h-4 w-4" />
-            <span>+ Add Lead to Pipeline</span>
-          </button>
+            <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+            <span>Add Lead</span>
+          </LiquidButton>
         </div>
       </div>
 
       {/* KPI Metric Summary Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
         {/* Total Leads */}
-        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-2xs">
+        <div className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-slate-500">Total Leads</span>
-            <Layers className="h-3.5 w-3.5 text-slate-400" />
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total</span>
+            <Layers className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.75} />
           </div>
-          <p className="mt-1 text-lg font-extrabold text-slate-900">{totalLeads}</p>
+          <p className="mt-1.5 text-xl font-bold tracking-tight text-slate-900">{totalLeads}</p>
         </div>
 
         {/* Active Pipeline */}
-        <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3 shadow-2xs">
+        <div className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-blue-700">Active Deals</span>
-            <span className="h-2 w-2 rounded-full bg-blue-500" />
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Active Deals</span>
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
           </div>
-          <p className="mt-1 text-lg font-extrabold text-blue-900">{activeLeads}</p>
+          <p className="mt-1.5 text-xl font-bold tracking-tight text-slate-900">{activeLeads}</p>
         </div>
 
         {/* Hot Leads */}
-        <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3 shadow-2xs">
+        <div className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-amber-700">Hot Leads</span>
-            <Flame className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Hot Leads</span>
+            <Flame className="h-3.5 w-3.5 text-amber-500" strokeWidth={1.75} />
           </div>
-          <p className="mt-1 text-lg font-extrabold text-amber-900">{hotLeads}</p>
+          <p className="mt-1.5 text-xl font-bold tracking-tight text-slate-900">{hotLeads}</p>
         </div>
 
         {/* Won Leads */}
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 shadow-2xs">
+        <div className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-emerald-700">Won Deals</span>
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+            <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">Won Deals</span>
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" strokeWidth={1.75} />
           </div>
-          <p className="mt-1 text-lg font-extrabold text-emerald-900">{wonLeads}</p>
+          <p className="mt-1.5 text-xl font-bold tracking-tight text-emerald-700">{wonLeads}</p>
         </div>
 
         {/* Lost Leads */}
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-2xs">
+        <div className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-slate-600">Lost Accounts</span>
-            <XCircle className="h-3.5 w-3.5 text-slate-400" />
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Lost</span>
+            <XCircle className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.75} />
           </div>
-          <p className="mt-1 text-lg font-extrabold text-slate-700">{lostLeads}</p>
+          <p className="mt-1.5 text-xl font-bold tracking-tight text-slate-700">{lostLeads}</p>
         </div>
 
         {/* Overdue Follow-ups */}
         <div
           className={`rounded-xl border p-3 shadow-2xs ${
             overdueFollowupsCount > 0
-              ? 'border-rose-200 bg-rose-50/60'
-              : 'border-slate-200 bg-white'
+              ? 'border-rose-200 bg-rose-50/40'
+              : 'border-slate-200/80 bg-white'
           }`}
         >
           <div className="flex items-center justify-between">
             <span
-              className={`text-[11px] font-semibold ${
+              className={`text-[11px] font-semibold uppercase tracking-wider ${
                 overdueFollowupsCount > 0 ? 'text-rose-700' : 'text-slate-500'
               }`}
             >
-              Overdue Tasks
+              Overdue
             </span>
             <Clock
               className={`h-3.5 w-3.5 ${
-                overdueFollowupsCount > 0 ? 'text-rose-500 animate-pulse' : 'text-slate-400'
+                overdueFollowupsCount > 0 ? 'text-rose-600' : 'text-slate-400'
               }`}
+              strokeWidth={1.75}
             />
           </div>
           <p
-            className={`mt-1 text-lg font-extrabold ${
+            className={`mt-1.5 text-xl font-bold tracking-tight ${
               overdueFollowupsCount > 0 ? 'text-rose-700' : 'text-slate-900'
             }`}
           >
@@ -208,15 +211,16 @@ export const PipelineHeader: React.FC<PipelineHeaderProps> = ({
 
           {/* Reset Filters */}
           {isFilterActive && (
-            <button
+            <LiquidButton
               id="btn-reset-pipeline-filters"
-              type="button"
+              variant="secondary"
+              size="sm"
               onClick={onResetFilters}
-              className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer shrink-0"
+              className="px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 shrink-0"
             >
               <RotateCcw className="h-3.5 w-3.5 text-slate-500" />
               <span>Reset</span>
-            </button>
+            </LiquidButton>
           )}
         </div>
 

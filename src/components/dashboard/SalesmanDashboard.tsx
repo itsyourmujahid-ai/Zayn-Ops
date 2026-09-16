@@ -1,28 +1,22 @@
 import React from 'react';
 import {
-  Layers,
-  Flame,
   Trophy,
   Calendar,
-  AlertCircle,
-  CheckCircle2,
-  Clock,
-  Sparkles,
-  TrendingUp,
+  Plus,
 } from 'lucide-react';
 import {
   FollowUpRecord,
   LeadRecord,
   LeadActivityRecord,
   UserProfile,
+  ClientRecord,
+  TargetRecord,
 } from '../../types/database';
 import { NavigationView } from '../../types/crm';
 import {
   isFollowUpDueToday,
   isFollowUpOverdue,
-  isFollowUpUpcoming,
 } from '../../utils/dashboardUtils';
-import { QuickActionsBar } from './QuickActionsBar';
 import { SalesmanTodayTasks } from './SalesmanTodayTasks';
 import { SalesmanPriorityLeads } from './SalesmanPriorityLeads';
 import { LeadPipelineOverview } from './LeadPipelineOverview';
@@ -34,8 +28,10 @@ import { useAuth } from '../../context/AuthContext';
 interface SalesmanDashboardProps {
   userProfile: UserProfile;
   leads: LeadRecord[];
+  clients?: ClientRecord[];
   followups: FollowUpRecord[];
   activities: LeadActivityRecord[];
+  targets?: TargetRecord[];
   allUsers: UserProfile[];
   onOpenAddLead: () => void;
   onOpenScheduleFollowUp: () => void;
@@ -48,8 +44,10 @@ interface SalesmanDashboardProps {
 export const SalesmanDashboard: React.FC<SalesmanDashboardProps> = ({
   userProfile,
   leads,
+  clients = [],
   followups,
   activities,
+  targets = [],
   allUsers,
   onOpenAddLead,
   onOpenScheduleFollowUp,
@@ -62,49 +60,47 @@ export const SalesmanDashboard: React.FC<SalesmanDashboardProps> = ({
   const canCreateLead = isAdmin || hasPermission('LEADS_CREATE');
   const canCreateFollowUp = isAdmin || hasPermission('FOLLOWUPS_CREATE');
 
-  // My Leads Metrics
+  // Strictly Isolated: Only this salesman's records
   const myTotalLeads = leads.length;
-  const myNewLeads = leads.filter((l) => l.status === 'New').length;
-  const myActiveLeads = leads.filter(
-    (l) => l.status !== 'Won' && l.status !== 'Lost'
-  ).length;
-  const myHotLeads = leads.filter((l) => l.priority === 'Hot').length;
   const myWonLeads = leads.filter((l) => l.status === 'Won').length;
-  const myLostLeads = leads.filter((l) => l.status === 'Lost').length;
+
+  // Clients owned by this salesman
+  const myClientsCount = clients.filter(
+    (c) =>
+      c.owner_id === userProfile.id ||
+      (c as any).created_by === userProfile.id ||
+      (c as any).salesman_id === userProfile.id
+  ).length;
 
   // Follow-ups metrics for this salesman
   const pendingFollowups = followups.filter((f) => f.status === 'pending');
   const overdueCount = pendingFollowups.filter((f) => isFollowUpOverdue(f)).length;
   const todayCount = pendingFollowups.filter((f) => isFollowUpDueToday(f)).length;
-  const upcomingCount = pendingFollowups.filter((f) => isFollowUpUpcoming(f)).length;
 
   const firstName = userProfile.full_name?.split(' ')[0] || 'Sales Rep';
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-5 pb-12">
       {/* Welcome & Quick Actions Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-[var(--border-color)] bg-[var(--bg-card)] p-5 rounded-2xl shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-slate-200/80 bg-white p-4 rounded-xl shadow-2xs">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
-              Personal Sales Workspace
-            </span>
-            <span className="rounded-full bg-[var(--color-primary-subtle)] px-2 py-0.5 text-[10px] font-bold text-[var(--color-primary)] border border-[var(--color-primary-border)]">
-              {userProfile.role}
+          <div className="flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#0CB675]" />
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Representative Workspace
             </span>
           </div>
-          <h2 className="text-xl font-bold mt-1 text-[var(--text-main)]">
+          <h2 className="text-base font-bold text-slate-900 mt-0.5">
             Welcome back, {firstName}
           </h2>
-          <p className="text-xs text-[var(--text-muted)] mt-0.5">
-            You have <strong className="text-[var(--text-main)] font-semibold">{todayCount}</strong> follow-up
+          <p className="text-xs text-slate-500 mt-0.5">
+            <strong className="text-slate-800 font-semibold">{todayCount}</strong> task
             {todayCount !== 1 ? 's' : ''} scheduled today
             {overdueCount > 0 ? (
-              <span className="text-[#F87171] font-bold ml-1">
-                and {overdueCount} overdue item{overdueCount !== 1 ? 's' : ''} requiring attention
+              <span className="text-rose-600 font-medium ml-1">
+                &bull; {overdueCount} overdue item{overdueCount !== 1 ? 's' : ''} requiring attention
               </span>
             ) : null}
-            .
           </p>
         </div>
 
@@ -114,10 +110,10 @@ export const SalesmanDashboard: React.FC<SalesmanDashboardProps> = ({
               id="salesman-quick-add-lead-btn"
               type="button"
               onClick={onOpenAddLead}
-              className="zaynos-btn-primary text-xs font-bold shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+              className="zaynops-btn-primary py-1.5 px-3 text-xs font-semibold flex items-center gap-1.5"
             >
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>Add Lead</span>
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+              <span>New Lead</span>
             </button>
           )}
           {canCreateFollowUp && (
@@ -125,124 +121,87 @@ export const SalesmanDashboard: React.FC<SalesmanDashboardProps> = ({
               id="salesman-quick-schedule-task-btn"
               type="button"
               onClick={onOpenScheduleFollowUp}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)] px-3.5 py-2 text-xs font-bold text-[var(--text-main)] transition cursor-pointer"
+              className="zaynops-btn-secondary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5"
             >
-              <Calendar className="h-3.5 w-3.5 text-[var(--color-primary)]" />
-              <span>Schedule Task</span>
+              <Calendar className="h-3.5 w-3.5 text-slate-500" strokeWidth={1.75} />
+              <span>Schedule Action</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* 1. KEY KPI STAT CARDS (MY LEADS) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {/* My Total Leads */}
-        <button
-          type="button"
-          onClick={() => onSelectView('leads')}
-          className="flex flex-col items-start p-3.5 rounded-xl border border-slate-200 bg-white shadow-xs hover:border-indigo-300 transition cursor-pointer text-left group"
-        >
-          <span className="text-[11px] font-semibold text-slate-500 group-hover:text-indigo-600">
-            My Total Leads
+      {/* MY SALES PERFORMANCE SUMMARY */}
+      <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+          <div className="flex items-center gap-2">
+            <Trophy className="h-4 w-4 text-[#0CB675]" strokeWidth={1.75} />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">Performance Summary</h3>
+          </div>
+          <span className="text-[10px] text-slate-400 font-medium">
+            Assigned Accounts
           </span>
-          <div className="mt-1 text-2xl font-black text-slate-900">{myTotalLeads}</div>
-          <span className="text-[10px] text-slate-400 mt-1">Assigned to you</span>
-        </button>
+        </div>
 
-        {/* My New Leads */}
-        <button
-          type="button"
-          onClick={() => onSelectView('leads', { leadFilter: { stage: 'New' } })}
-          className="flex flex-col items-start p-3.5 rounded-xl border border-blue-100 bg-blue-50/50 shadow-xs hover:border-blue-300 transition cursor-pointer text-left group"
-        >
-          <span className="text-[11px] font-semibold text-blue-700">New Leads</span>
-          <div className="mt-1 text-2xl font-black text-blue-900">{myNewLeads}</div>
-          <span className="text-[10px] text-blue-500 mt-1">Needs outreach</span>
-        </button>
-
-        {/* My Active Leads */}
-        <button
-          type="button"
-          onClick={() => onSelectView('leads')}
-          className="flex flex-col items-start p-3.5 rounded-xl border border-indigo-100 bg-indigo-50/50 shadow-xs hover:border-indigo-300 transition cursor-pointer text-left group"
-        >
-          <span className="text-[11px] font-semibold text-indigo-700">Active Deals</span>
-          <div className="mt-1 text-2xl font-black text-indigo-900">{myActiveLeads}</div>
-          <span className="text-[10px] text-indigo-500 mt-1">In progress</span>
-        </button>
-
-        {/* My Hot Leads */}
-        <button
-          type="button"
-          onClick={() => onSelectView('leads', { leadFilter: { priority: 'Hot' } })}
-          className="flex flex-col items-start p-3.5 rounded-xl border border-amber-200 bg-amber-50/60 shadow-xs hover:border-amber-300 transition cursor-pointer text-left group"
-        >
-          <div className="flex items-center gap-1">
-            <span className="text-[11px] font-bold text-amber-800">Hot Leads</span>
-            <Flame className="h-3 w-3 text-amber-600 fill-amber-500" />
-          </div>
-          <div className="mt-1 text-2xl font-black text-amber-900">{myHotLeads}</div>
-          <span className="text-[10px] text-amber-600 mt-1">Highest priority</span>
-        </button>
-
-        {/* My Won Deals */}
-        <button
-          type="button"
-          onClick={() => onSelectView('leads', { leadFilter: { stage: 'Won' } })}
-          className="flex flex-col items-start p-3.5 rounded-xl border border-emerald-100 bg-emerald-50/50 shadow-xs hover:border-emerald-300 transition cursor-pointer text-left group"
-        >
-          <div className="flex items-center gap-1">
-            <span className="text-[11px] font-bold text-emerald-800">Won</span>
-            <Trophy className="h-3 w-3 text-emerald-600" />
-          </div>
-          <div className="mt-1 text-2xl font-black text-emerald-900">{myWonLeads}</div>
-          <span className="text-[10px] text-emerald-600 mt-1">Closed deals</span>
-        </button>
-
-        {/* Overdue Alert Stat */}
-        <button
-          type="button"
-          onClick={() => onSelectView('followups', { followupTab: 'overdue' })}
-          className={`flex flex-col items-start p-3.5 rounded-xl border shadow-xs transition cursor-pointer text-left group ${
-            overdueCount > 0
-              ? 'border-rose-300 bg-rose-50/80 hover:bg-rose-100'
-              : 'border-slate-200 bg-white hover:border-slate-300'
-          }`}
-        >
-          <div className="flex items-center gap-1">
-            <span
-              className={`text-[11px] font-bold ${
-                overdueCount > 0 ? 'text-rose-800' : 'text-slate-500'
-              }`}
-            >
-              Overdue Tasks
-            </span>
-            {overdueCount > 0 && (
-              <AlertCircle className="h-3 w-3 text-rose-600 animate-pulse" />
-            )}
-          </div>
-          <div
-            className={`mt-1 text-2xl font-black ${
-              overdueCount > 0 ? 'text-rose-700' : 'text-slate-800'
-            }`}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* Leads */}
+          <button
+            type="button"
+            onClick={() => onSelectView('leads')}
+            className="p-3 rounded-lg bg-slate-50/60 border border-slate-200/70 hover:border-slate-300 transition text-left cursor-pointer"
           >
-            {overdueCount}
-          </div>
-          <span className="text-[10px] text-slate-400 mt-1">
-            {overdueCount > 0 ? 'Action required' : 'All clear'}
-          </span>
-        </button>
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">My Leads</span>
+            <div className="text-2xl font-bold tracking-tight text-slate-900 mt-1">{myTotalLeads}</div>
+            <span className="text-[10px] text-slate-400">In my pipeline</span>
+          </button>
+
+          {/* Won */}
+          <button
+            type="button"
+            onClick={() => onSelectView('leads', { leadFilter: { stage: 'Won' } })}
+            className="p-3 rounded-lg bg-emerald-50/40 border border-emerald-200/70 hover:border-emerald-300 transition text-left cursor-pointer"
+          >
+            <span className="text-[11px] font-semibold text-emerald-800 uppercase tracking-wider">Won Deals</span>
+            <div className="text-2xl font-bold tracking-tight text-emerald-700 mt-1">{myWonLeads}</div>
+            <span className="text-[10px] text-emerald-600">Successfully closed</span>
+          </button>
+
+          {/* Clients */}
+          <button
+            type="button"
+            onClick={() => onSelectView('clients')}
+            className="p-3 rounded-lg bg-slate-50/60 border border-slate-200/70 hover:border-slate-300 transition text-left cursor-pointer"
+          >
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Clients</span>
+            <div className="text-2xl font-bold tracking-tight text-slate-900 mt-1">{myClientsCount}</div>
+            <span className="text-[10px] text-slate-400">Customer accounts</span>
+          </button>
+
+          {/* Pending Follow-ups */}
+          <button
+            type="button"
+            onClick={() => onSelectView('followups', { followupTab: 'pending' })}
+            className="p-3 rounded-lg bg-slate-50/60 border border-slate-200/70 hover:border-slate-300 transition text-left cursor-pointer"
+          >
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Pending Tasks</span>
+            <div className="text-2xl font-bold tracking-tight text-slate-900 mt-1">{pendingFollowups.length}</div>
+            <span className="text-[10px] text-slate-400">
+              {overdueCount > 0 ? `${overdueCount} overdue` : 'Scheduled actions'}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* 1.1 TARGETS & PERFORMANCE METRICS */}
       <SalesmanPerformanceCard
         userProfile={userProfile}
         leads={leads}
+        clients={clients}
         followups={followups}
         activities={activities}
+        targets={targets}
       />
 
-      {/* 2. TODAY'S WORK & ACTIONS (PRIMARY FOCUS FOR SALESMAN) */}
+      {/* 2. TODAY'S WORK & ACTIONS */}
       <SalesmanTodayTasks
         followups={followups}
         leads={leads}
@@ -253,7 +212,7 @@ export const SalesmanDashboard: React.FC<SalesmanDashboardProps> = ({
         onViewAllFollowups={() => onSelectView('followups')}
       />
 
-      {/* 2.1 SALES CALENDAR & APPOINTMENTS (PHASE U) */}
+      {/* 2.1 SALES CALENDAR & APPOINTMENTS */}
       <DashboardCalendarWidget
         followups={followups}
         allUsers={allUsers}
@@ -267,8 +226,7 @@ export const SalesmanDashboard: React.FC<SalesmanDashboardProps> = ({
       />
 
       {/* 3. PRIORITY LEADS & PERSONAL RECENT ACTIVITY */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Priority Leads (7 Cols) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         <div className="lg:col-span-7">
           <SalesmanPriorityLeads
             leads={leads}
@@ -278,7 +236,6 @@ export const SalesmanDashboard: React.FC<SalesmanDashboardProps> = ({
           />
         </div>
 
-        {/* My Recent Activity Timeline (5 Cols) */}
         <div className="lg:col-span-5">
           <RecentActivityFeed
             activities={activities}

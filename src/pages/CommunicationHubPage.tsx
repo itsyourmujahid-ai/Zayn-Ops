@@ -22,8 +22,10 @@ import {
   AlertCircle,
   FileText,
   Layers,
+  MessageSquareText,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { TeamChatView } from '../components/communication/TeamChatView';
 import {
   LeadActivityRecord,
   LeadTransferRecord,
@@ -46,7 +48,7 @@ interface CommunicationHubPageProps {
   onSelectClient: (clientId: string) => void;
 }
 
-type HubTab = 'communications' | 'lead-transfers' | 'client-transfers';
+type HubTab = 'team-chat' | 'communications' | 'lead-transfers' | 'client-transfers';
 type DateFilter = 'all' | 'today' | 'yesterday' | 'last7' | 'last30';
 
 const PAGE_SIZE = 25;
@@ -57,8 +59,8 @@ export const CommunicationHubPage: React.FC<CommunicationHubPageProps> = ({
 }) => {
   const { userProfile, isSuperAdmin } = useAuth();
 
-  // Active Tab
-  const [activeTab, setActiveTab] = useState<HubTab>('communications');
+  // Active Tab: Default to Team Chat
+  const [activeTab, setActiveTab] = useState<HubTab>('team-chat');
 
   // Data states
   const [communications, setCommunications] = useState<LeadActivityRecord[]>([]);
@@ -448,9 +450,8 @@ export const CommunicationHubPage: React.FC<CommunicationHubPageProps> = ({
   };
 
   // -------------------------------------------------------------
-  // Security Guard: Company Admin ONLY
-  // SUPER_ADMIN / VVIP: NO
-  // Salesman: NO
+  // Security Guard: Company Employees ONLY (Admin & Salesman)
+  // SUPER_ADMIN: NO (Tenant isolation)
   // Customer: NO
   // -------------------------------------------------------------
   if (isSuperAdmin) {
@@ -460,33 +461,27 @@ export const CommunicationHubPage: React.FC<CommunicationHubPageProps> = ({
           <div className="mx-auto w-14 h-14 rounded-2xl bg-red-100 flex items-center justify-center text-red-600 mb-4 border border-red-200">
             <ShieldAlert className="h-7 w-7" />
           </div>
-          <h2 className="text-lg font-bold text-red-950">Access Denied</h2>
+          <h2 className="text-lg font-bold text-red-950">Tenant Isolation Enforced</h2>
           <p className="text-sm text-red-800 max-w-lg mx-auto mt-2">
-            Access Denied: Platform Administrators cannot access tenant operational communications.
+            Access Restricted: Platform Administrators cannot participate in or monitor company internal operational communications to preserve tenant isolation.
           </p>
-          <div className="mt-6">
-            <a
-              href="/super-admin"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-600 text-white font-bold text-xs hover:bg-red-700 shadow-xs transition"
-            >
-              Redirect to: Super Admin Console
-            </a>
-          </div>
         </div>
       </div>
     );
   }
 
-  if (userProfile?.role !== 'ADMIN') {
+  const isEmployee = userProfile?.role === 'ADMIN' || userProfile?.role === 'SALESMAN';
+
+  if (!isEmployee) {
     return (
       <div className="max-w-4xl mx-auto py-12 px-4" id="communication-hub-unauthorized">
         <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-8 text-center shadow-xs">
           <div className="mx-auto w-14 h-14 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600 mb-4 border border-amber-200">
             <ShieldAlert className="h-7 w-7" />
           </div>
-          <h2 className="text-lg font-bold text-amber-950">Company Administrator Access Required</h2>
+          <h2 className="text-lg font-bold text-amber-950">Internal Team Access Required</h2>
           <p className="text-sm text-amber-800 max-w-lg mx-auto mt-2">
-            The Communication Hub is reserved exclusively for Company Administrators to monitor company-wide communications and portfolio transfers.
+            The Communication Hub is reserved exclusively for Company Administrators and Sales Representatives.
           </p>
         </div>
       </div>
@@ -585,75 +580,108 @@ export const CommunicationHubPage: React.FC<CommunicationHubPageProps> = ({
       {/* 2. Top Tabs Switcher */}
       <div className="border-b border-slate-200 bg-white px-3 pt-2 rounded-t-2xl shadow-2xs">
         <div className="flex items-center gap-2 overflow-x-auto">
-          {/* Tab 1: Communications */}
+          {/* Tab 0: Team Chat (Premier Internal Messaging) */}
           <button
             type="button"
-            id="hub-tab-communications"
-            onClick={() => setActiveTab('communications')}
+            id="hub-tab-team-chat"
+            onClick={() => setActiveTab('team-chat')}
             className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition cursor-pointer whitespace-nowrap ${
-              activeTab === 'communications'
-                ? 'border-indigo-600 text-indigo-700 bg-indigo-50/30'
+              activeTab === 'team-chat'
+                ? 'border-emerald-600 text-emerald-700 bg-emerald-50/40'
                 : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
             }`}
           >
-            <MessageSquare className="h-4 w-4" />
-            <span>Communications</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
-                activeTab === 'communications' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
-              }`}
-            >
-              {communications.length}
+            <MessageSquareText className="h-4 w-4 text-emerald-600" />
+            <span>Team Chat</span>
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800">
+              Live
             </span>
           </button>
+
+          {/* Tab 1: Communications */}
+          {(userProfile?.role === 'ADMIN' || activeTab === 'communications') && (
+            <button
+              type="button"
+              id="hub-tab-communications"
+              onClick={() => setActiveTab('communications')}
+              className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'communications'
+                  ? 'border-indigo-600 text-indigo-700 bg-indigo-50/30'
+                  : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+              }`}
+            >
+              <MessageSquare className="h-4 w-4" />
+              <span>Activity Log</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
+                  activeTab === 'communications' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {communications.length}
+              </span>
+            </button>
+          )}
 
           {/* Tab 2: Lead Transfers */}
-          <button
-            type="button"
-            id="hub-tab-lead-transfers"
-            onClick={() => setActiveTab('lead-transfers')}
-            className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition cursor-pointer whitespace-nowrap ${
-              activeTab === 'lead-transfers'
-                ? 'border-indigo-600 text-indigo-700 bg-indigo-50/30'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
-            }`}
-          >
-            <History className="h-4 w-4" />
-            <span>Lead Transfers</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
-                activeTab === 'lead-transfers' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+          {userProfile?.role === 'ADMIN' && (
+            <button
+              type="button"
+              id="hub-tab-lead-transfers"
+              onClick={() => setActiveTab('lead-transfers')}
+              className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'lead-transfers'
+                  ? 'border-indigo-600 text-indigo-700 bg-indigo-50/30'
+                  : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
               }`}
             >
-              {leadTransfers.length}
-            </span>
-          </button>
+              <History className="h-4 w-4" />
+              <span>Lead Transfers</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
+                  activeTab === 'lead-transfers' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {leadTransfers.length}
+              </span>
+            </button>
+          )}
 
           {/* Tab 3: Client Transfers */}
-          <button
-            type="button"
-            id="hub-tab-client-transfers"
-            onClick={() => setActiveTab('client-transfers')}
-            className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition cursor-pointer whitespace-nowrap ${
-              activeTab === 'client-transfers'
-                ? 'border-indigo-600 text-indigo-700 bg-indigo-50/30'
-                : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
-            }`}
-          >
-            <Briefcase className="h-4 w-4" />
-            <span>Client Transfers</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
-                activeTab === 'client-transfers' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+          {userProfile?.role === 'ADMIN' && (
+            <button
+              type="button"
+              id="hub-tab-client-transfers"
+              onClick={() => setActiveTab('client-transfers')}
+              className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition cursor-pointer whitespace-nowrap ${
+                activeTab === 'client-transfers'
+                  ? 'border-indigo-600 text-indigo-700 bg-indigo-50/30'
+                  : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
               }`}
             >
-              {clientTransfers.length}
-            </span>
-          </button>
+              <Briefcase className="h-4 w-4" />
+              <span>Client Transfers</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
+                  activeTab === 'client-transfers' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {clientTransfers.length}
+              </span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* 3. Tab Contents */}
+
+      {/* ========================================================= */}
+      {/* TAB 0: TEAM CHAT (INTERNAL 1-ON-1 MESSAGING) */}
+      {/* ========================================================= */}
+      {activeTab === 'team-chat' && (
+        <div className="animate-in fade-in duration-150">
+          <TeamChatView />
+        </div>
+      )}
 
       {/* ========================================================= */}
       {/* TAB 1: COMMUNICATIONS */}

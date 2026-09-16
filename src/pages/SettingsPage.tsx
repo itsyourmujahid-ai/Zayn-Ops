@@ -212,10 +212,9 @@ export const SettingsPage: React.FC = () => {
 
                       {/* Mini Mock Button */}
                       <div
-                        className="w-full text-center py-1 rounded text-[9px] font-bold"
+                        className="w-full text-center py-1 rounded text-[9px] font-bold text-white"
                         style={{
                           backgroundColor: t.colorPrimary,
-                          color: t.id === 'obsidian-gold' || t.id === 'emerald-noir' ? '#09090B' : '#FFFFFF',
                         }}
                       >
                         Action CTA
@@ -253,10 +252,9 @@ export const SettingsPage: React.FC = () => {
                       {/* Selected Indicator Checkmark */}
                       {isSelected ? (
                         <div
-                          className="flex h-5 w-5 items-center justify-center rounded-full shrink-0 shadow-xs"
+                          className="flex h-5 w-5 items-center justify-center rounded-full shrink-0 shadow-xs text-white"
                           style={{
                             backgroundColor: t.colorPrimary,
-                            color: t.id === 'obsidian-gold' || t.id === 'emerald-noir' ? '#09090B' : '#FFFFFF',
                           }}
                         >
                           <Check className="h-3 w-3 stroke-[3]" />

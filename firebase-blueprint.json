@@ -263,9 +263,51 @@
         "updated_at": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "name", "status"]
+    },
+    "TeamConversation": {
+      "title": "Team Conversation",
+      "description": "Internal 1-to-1 company conversation between team members",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "company_id": { "type": "string" },
+        "participant_ids": { "type": "array" },
+        "participant_names": { "type": "object" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "last_message_at": { "type": "string", "format": "date-time" },
+        "last_message_preview": { "type": "string" },
+        "created_by": { "type": "string" }
+      },
+      "required": ["id", "company_id", "participant_ids", "created_by", "created_at"]
+    },
+    "TeamMessage": {
+      "title": "Team Message",
+      "description": "Internal chat message sent in a team conversation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "company_id": { "type": "string" },
+        "conversation_id": { "type": "string" },
+        "sender_id": { "type": "string" },
+        "sender_name": { "type": "string" },
+        "sender_role": { "type": "string" },
+        "message": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "read_by": { "type": "array" }
+      },
+      "required": ["id", "company_id", "conversation_id", "sender_id", "sender_name", "message", "created_at"]
     }
   },
   "firestore": {
+    "/conversations/{conversationId}": {
+      "schema": "TeamConversation",
+      "description": "Internal company team conversations between authorized team members"
+    },
+    "/conversations/{conversationId}/messages/{messageId}": {
+      "schema": "TeamMessage",
+      "description": "Internal chat messages within a team conversation"
+    },
     "/companies/{companyId}": {
       "schema": "Company",
       "description": "Multi-tenant company organizations managed by Super Admin"

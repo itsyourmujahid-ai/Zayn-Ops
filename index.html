@@ -13,7 +13,10 @@
     <script>
       (function() {
         try {
-          var theme = localStorage.getItem('zaynops_theme') || localStorage.getItem('zaynos_theme') || 'obsidian-gold';
+          var theme = localStorage.getItem('zaynops_theme') || localStorage.getItem('zaynos_theme');
+          if (!theme || theme === 'obsidian-gold' || theme === 'midnight-navy' || theme === 'emerald-noir') {
+            theme = 'zaynops-light';
+          }
           document.documentElement.setAttribute('data-theme', theme);
         } catch (e) {}
       })();

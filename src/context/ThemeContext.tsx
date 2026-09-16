@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-export type ZaynOpsThemeId = 'obsidian-gold' | 'midnight-navy' | 'emerald-noir';
+export type ZaynOpsThemeId = 'zaynops-light' | 'zaynops-slate' | 'zaynops-dark';
 export type ZaynOsThemeId = ZaynOpsThemeId;
 
 export interface ZaynOpsThemeConfig {
@@ -18,41 +18,41 @@ export interface ZaynOpsThemeConfig {
 export type ZaynOsThemeConfig = ZaynOpsThemeConfig;
 
 export const ZAYNOPS_THEMES: Record<ZaynOpsThemeId, ZaynOpsThemeConfig> = {
-  'obsidian-gold': {
-    id: 'obsidian-gold',
-    name: 'Obsidian & Champagne Gold',
-    style: 'Luxury Elite',
-    tagline: 'High-contrast obsidian black paired with champagne gold accents for an executive, prestigious aesthetic.',
-    bgBase: '#121212',
-    bgCard: '#1E1E1E',
-    colorPrimary: '#D4AF37',
-    textMain: '#FAFAFA',
-    textMuted: '#A1A1AA',
-    borderColor: '#2E2E32',
+  'zaynops-light': {
+    id: 'zaynops-light',
+    name: 'ZaynOps Pure Light',
+    style: 'Minimal Executive',
+    tagline: 'Light-first, high-precision interface with generous negative space and signature emerald accents.',
+    bgBase: '#F8FAFC',
+    bgCard: '#FFFFFF',
+    colorPrimary: '#0CB675',
+    textMain: '#0F172A',
+    textMuted: '#64748B',
+    borderColor: '#E2E8F0',
   },
-  'midnight-navy': {
-    id: 'midnight-navy',
-    name: 'Midnight Navy & Electric Cyan',
-    style: 'Modern SaaS',
-    tagline: 'Deep cosmic slate navy with electric cyan highlights, calibrated for modern enterprise technology teams.',
-    bgBase: '#0B1120',
-    bgCard: '#131D31',
-    colorPrimary: '#0EA5E9',
+  'zaynops-slate': {
+    id: 'zaynops-slate',
+    name: 'ZaynOps Slate Light',
+    style: 'Quiet Contrast',
+    tagline: 'Soft off-white canvas with restrained slate tones for long commercial sessions.',
+    bgBase: '#F1F5F9',
+    bgCard: '#FFFFFF',
+    colorPrimary: '#059669',
+    textMain: '#0F172A',
+    textMuted: '#475569',
+    borderColor: '#E2E8F0',
+  },
+  'zaynops-dark': {
+    id: 'zaynops-dark',
+    name: 'ZaynOps Obsidian Dark',
+    style: 'Executive Night',
+    tagline: 'Refined deep obsidian canvas with crisp typography and subtle emerald luminescence.',
+    bgBase: '#090D16',
+    bgCard: '#111827',
+    colorPrimary: '#10B981',
     textMain: '#F8FAFC',
     textMuted: '#94A3B8',
-    borderColor: '#243044',
-  },
-  'emerald-noir': {
-    id: 'emerald-noir',
-    name: 'Emerald Noir',
-    style: 'Growth & Fintech',
-    tagline: 'Deep carbon noir canvas accented with vibrant emerald green, inspiring financial velocity and pipeline growth.',
-    bgBase: '#09090B',
-    bgCard: '#141416',
-    colorPrimary: '#10B981',
-    textMain: '#F4F4F5',
-    textMuted: '#A1A1AA',
-    borderColor: '#242428',
+    borderColor: '#1F2937',
   },
 };
 export const ZAYNOS_THEMES = ZAYNOPS_THEMES;
@@ -72,12 +72,14 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<ZaynOpsThemeId>(() => {
     if (typeof window !== 'undefined') {
-      const stored = (localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY)) as ZaynOpsThemeId;
-      if (stored && ZAYNOPS_THEMES[stored]) {
-        return stored;
+      const stored = (localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY)) as string;
+      if (stored && (stored in ZAYNOPS_THEMES)) {
+        return stored as ZaynOpsThemeId;
       }
+      // Migrate old dark defaults to the requested Light-First system
+      return 'zaynops-light';
     }
-    return 'obsidian-gold';
+    return 'zaynops-light';
   });
 
   const setTheme = (newTheme: ZaynOpsThemeId) => {
@@ -93,12 +95,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   useEffect(() => {
-    // Apply data-theme attribute directly to document element and body
     const root = document.documentElement;
     root.setAttribute('data-theme', theme);
     document.body.setAttribute('data-theme', theme);
 
-    // Also update meta theme-color for mobile browser address bars
     let metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (!metaThemeColor) {
       metaThemeColor = document.createElement('meta');

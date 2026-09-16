@@ -67,58 +67,54 @@ export const ReportsHeader: React.FC<ReportsHeaderProps> = ({
   return (
     <div className="space-y-4">
       {/* Top Header Row */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
         <div className="space-y-1">
           <div className="flex items-center gap-2.5">
             <h1 className="text-xl font-bold tracking-tight text-slate-900">
-              {isAdmin ? 'Reports & Performance Analytics' : 'My Sales & Performance Report'}
+              {isAdmin ? 'Performance Reports' : 'My Performance Report'}
             </h1>
             <span
-              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                isAdmin
-                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-              }`}
+              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200/80"
             >
               {isAdmin ? (
                 <>
-                  <ShieldCheck className="h-3 w-3" />
+                  <ShieldCheck className="h-3 w-3 text-[#0CB675]" />
                   Admin Executive View
                 </>
               ) : (
                 <>
-                  <UserCheck className="h-3 w-3" />
-                  Personal Metrics Only
+                  <UserCheck className="h-3 w-3 text-[#0CB675]" />
+                  Personal Metrics
                 </>
               )}
             </span>
           </div>
           <p className="text-xs text-slate-500">
             {isAdmin
-              ? 'Real-time corporate sales pipeline KPIs, representative metrics, and conversion intelligence'
-              : 'Real-time personal lead progress, activity tracking, and follow-up discipline analytics'}
+              ? 'Real-time sales pipeline KPIs, representative metrics, and conversion intelligence.'
+              : 'Real-time personal lead progress, activity tracking, and follow-up discipline analytics.'}
           </p>
-          <div className="flex items-center gap-2 pt-1 text-xs text-slate-600 font-medium">
-            <Calendar className="h-3.5 w-3.5 text-indigo-600" />
-            <span>Active Range: <strong className="text-slate-900">{dateRangeDisplay}</strong></span>
+          <div className="flex items-center gap-1.5 pt-0.5 text-xs text-slate-500 font-medium">
+            <Calendar className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.75} />
+            <span>Active Range: <strong className="text-slate-800">{dateRangeDisplay}</strong></span>
           </div>
         </div>
 
         {/* Right Action & Salesman Filter (Admin Only) */}
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           {isAdmin && (
-            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg p-1">
-              <span className="text-[11px] font-semibold text-slate-500 pl-2">Filter Salesman:</span>
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 rounded-lg p-1">
+              <span className="text-[11px] font-semibold text-slate-500 pl-1.5">Salesman:</span>
               <select
                 id="report-salesman-select"
                 value={filterState.selectedSalesman}
                 onChange={(e) => onFilterChange({ selectedSalesman: e.target.value })}
-                className="bg-white border border-slate-200 rounded-md px-2.5 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                className="bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-medium text-slate-800 focus:outline-none cursor-pointer"
               >
                 <option value="all">All Sales Representatives</option>
                 {activeSalesmen.map((salesman) => (
                   <option key={salesman.id} value={salesman.id}>
-                    👤 {salesman.full_name || salesman.email}
+                    {salesman.full_name || salesman.email}
                   </option>
                 ))}
               </select>
@@ -128,11 +124,11 @@ export const ReportsHeader: React.FC<ReportsHeaderProps> = ({
           <button
             type="button"
             onClick={onResetFilters}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+            className="zaynops-btn-secondary py-1.5 px-3 text-xs font-medium flex items-center gap-1.5 cursor-pointer"
             title="Reset active date and dimension filters"
           >
-            <RotateCcw className="h-3.5 w-3.5 text-slate-500" />
-            Reset
+            <RotateCcw className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.75} />
+            <span>Reset</span>
           </button>
         </div>
       </div>
@@ -147,15 +143,15 @@ export const ReportsHeader: React.FC<ReportsHeaderProps> = ({
                 key={item.preset}
                 type="button"
                 onClick={() => handlePresetClick(item.preset)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer whitespace-nowrap ${
                   isActive
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                    ? 'bg-slate-900 text-white shadow-2xs font-semibold'
+                    : 'bg-white border border-slate-200/80 text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
                 {item.label}
                 {item.preset === 'custom' && filterState.dateRangePreset === 'custom' && (
-                  <span className="ml-1 text-[10px] bg-indigo-700 px-1.5 py-0.5 rounded text-white">
+                  <span className="ml-1 text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-white">
                     {filterState.customStartDate} ~ {filterState.customEndDate}
                   </span>
                 )}

@@ -4,11 +4,13 @@
 
 import { Priority, LeadStatus, ClientStatus } from './database';
 
-export type ImportType = 'leads' | 'clients';
+export type ImportType = 'leads' | 'clients' | 'clients_and_leads';
 
 export type ImportMode = 'create_only' | 'create_and_update';
 
 export type DuplicateResolutionAction = 'skip' | 'import_anyway' | 'update_existing';
+
+export type DuplicateClassification = 'new' | 'exact_duplicate' | 'possible_duplicate' | 'invalid';
 
 export type ImportJobStatus = 'Processing' | 'Completed' | 'Completed With Errors' | 'Failed';
 
@@ -22,6 +24,7 @@ export interface ImportRowError {
 
 export interface ImportJobRecord {
   id: string;
+  company_id?: string;
   import_type: ImportType;
   file_name: string;
   file_type: 'csv' | 'xlsx';
@@ -34,9 +37,13 @@ export interface ImportJobRecord {
   updated_count: number;
   skipped_count: number;
   error_count: number;
+  new_clients_count?: number;
+  new_leads_count?: number;
+  linked_leads_count?: number;
   status: ImportJobStatus;
   mode: ImportMode;
   duplicate_action: DuplicateResolutionAction;
+  salesman_mapping?: Record<string, string>;
   error_details?: ImportRowError[];
 }
 
@@ -46,6 +53,7 @@ export interface ColumnDefinition {
   required: boolean;
   aliases: string[];
   description: string;
+  category?: 'company' | 'contact' | 'lead' | 'client' | 'ownership';
 }
 
 export interface ParsedRowResult {
@@ -55,10 +63,17 @@ export interface ParsedRowResult {
   isValid: boolean;
   errors: ImportRowError[];
   warnings: string[];
+  classification: DuplicateClassification;
   isDuplicate: boolean;
+  isPossibleDuplicate?: boolean;
   duplicateRecordId?: string;
   duplicateRecordName?: string;
   duplicateReason?: string;
+  linkedClientId?: string;
+  linkedClientName?: string;
+  rawSalesman?: string;
+  assignedSalesmanId?: string;
+  assignedSalesmanName?: string;
   resolvedAction: 'create' | 'update' | 'skip' | 'error';
 }
 
@@ -68,6 +83,12 @@ export interface ValidationSummary {
   warningRows: number;
   errorRows: number;
   duplicateRows: number;
+  possibleDuplicates: number;
+  newClients: number;
+  existingClients: number;
+  newLeads: number;
+  linkedLeads: number;
+  unassignedCount: number;
   toCreate: number;
   toUpdate: number;
   toSkip: number;

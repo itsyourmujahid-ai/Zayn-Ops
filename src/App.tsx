@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { NavigationView } from './types/crm';
 import { AppLayout } from './components/layout/AppLayout';
 import { QuickAddLeadModal } from './components/common/QuickAddLeadModal';
@@ -362,6 +363,7 @@ const AuthenticatedCRM: React.FC = () => {
       leadFilter?: { stage?: string; priority?: string; salesman?: string };
       followupTab?: FollowupTab;
       salesman?: string;
+      selectedSalesmanId?: string;
     }
   ) => {
     // VVIP is restricted strictly to platform governance
@@ -461,6 +463,8 @@ const AuthenticatedCRM: React.FC = () => {
     setSelectedClientId(null);
     if (view !== 'team') {
       setSelectedSalesmanId(null);
+    } else if (options?.selectedSalesmanId) {
+      setSelectedSalesmanId(options.selectedSalesmanId);
     }
     if (typeof window !== 'undefined' && window.history) {
       const targetUrl = getViewPath(view, searchQueryParam);
@@ -502,10 +506,10 @@ const AuthenticatedCRM: React.FC = () => {
   // While verifying session persistence on initial load, do not flash protected content
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div className="text-center space-y-3">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-white animate-pulse">
-            <Compass className="h-6 w-6" />
+      <div className="relative flex min-h-screen items-center justify-center bg-[var(--bg-base)]">
+        <div className="relative z-10 text-center space-y-3">
+          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-[#0CB675] text-white shadow-xs animate-pulse">
+            <Compass className="h-5 w-5" />
           </div>
           <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
             Verifying Session &amp; Connecting Database...
@@ -835,7 +839,19 @@ const AuthenticatedCRM: React.FC = () => {
       onSelectLead={handleSelectLead}
       onOpenSearch={() => setIsSearchModalOpen(true)}
     >
-      {renderActiveView()}
+      {/* Fluid Page Transition Layer */}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={currentView + (selectedLeadId || '') + (selectedClientId || '')}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+          className="w-full"
+        >
+          {renderActiveView()}
+        </motion.div>
+      </AnimatePresence>
 
       {/* Global Command Palette & Unified Search Modal */}
       <GlobalSearchModal

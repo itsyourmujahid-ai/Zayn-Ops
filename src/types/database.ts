@@ -418,6 +418,8 @@ export interface LeadRecord {
   record_status?: 'active' | 'merged' | 'deleted';
   deleted_at?: string;
   deleted_by?: string;
+  deleted_by_name?: string;
+  delete_reason?: string;
   merged_into_id?: string;
   merged_at?: string;
   merged_by?: string;
@@ -1314,14 +1316,63 @@ export interface UpdateTargetInput {
   reason?: string;
 }
 
+export type TargetDisplayStatus =
+  | 'Not Started'
+  | 'On Track'
+  | 'Behind'
+  | 'Achieved'
+  | 'Overachieved'
+  | 'In Progress';
+
 export interface TargetProgressResult {
   current: number;
   target: number;
   percentage: number;
   remaining: number;
-  status: 'Not Started' | 'In Progress' | 'Achieved' | 'Overachieved';
+  status: TargetDisplayStatus;
   statusColor: string;
 }
+
+// ======================================================================
+// Phase 2: Team Communication Hub Data Models
+// ======================================================================
+
+/**
+ * Team conversation in Firestore: `conversations/{conversationId}`
+ * Scoped to company_id. 1-to-1 conversation between company members.
+ */
+export interface TeamConversationRecord {
+  id: string;
+  company_id: string;
+  participant_ids: string[];
+  participant_names: Record<string, string>;
+  participant_roles?: Record<string, string>;
+  created_at: string;
+  updated_at: string;
+  last_message_at?: string;
+  last_message_preview?: string;
+  last_message_sender_id?: string;
+  last_message_sender_name?: string;
+  created_by: string;
+}
+
+/**
+ * Team chat message in Firestore: `conversations/{conversationId}/messages/{messageId}`
+ */
+export interface TeamMessageRecord {
+  id: string;
+  company_id: string;
+  conversation_id: string;
+  sender_id: string;
+  sender_name: string;
+  sender_role: string;
+  message: string;
+  created_at: string;
+  updated_at?: string;
+  read_by: string[]; // List of user IDs who have read this message
+  deleted_at?: string;
+}
+
 
 
 

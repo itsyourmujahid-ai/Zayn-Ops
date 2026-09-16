@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Plus, Search, Palette, Check, LogOut, ShieldCheck, ShieldAlert, ChevronDown, Menu, User } from 'lucide-react';
 import { NavigationView } from '../../types/crm';
 import { useAuth } from '../../context/AuthContext';
-import { useTheme, ZaynOpsThemeId } from '../../context/ThemeContext';
+import { useTheme } from '../../context/ThemeContext';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { ZaynLogo } from '../common/ZaynLogo';
 
@@ -49,41 +49,41 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   const getPageTitle = (view: NavigationView) => {
     switch (view) {
       case 'dashboard':
-        return 'Executive Sales Dashboard';
+        return 'Overview';
       case 'leads':
-        return 'Lead Pipeline Management';
+        return 'Leads';
       case 'clients':
-        return 'Client Accounts & Accounts';
+        return 'Clients';
       case 'calendar':
-        return 'Sales Calendar & Visits';
+        return 'Sales Calendar';
       case 'segments':
-        return 'Segments & Tag Taxonomy';
+        return 'Segments & Tags';
       case 'pipeline':
-        return 'Interactive Deal Pipeline';
+        return 'Sales Pipeline';
       case 'followups':
-        return 'Follow-ups & Due Actions';
+        return 'Follow-ups';
       case 'reports':
-        return 'Analytics & Conversion Reports';
+        return 'Reports & KPIs';
       case 'notifications':
-        return 'System Notifications';
+        return 'Notifications';
       case 'communication-hub':
-        return 'Company Communication Hub';
+        return 'Communication Hub';
       case 'audit':
-        return 'Security Audit Trail';
+        return 'Audit Trail';
       case 'data-quality':
-        return 'Data Quality & Deduplication';
+        return 'Data Quality';
       case 'data-management':
-        return 'Import, Export & Bulk Ops';
+        return 'Import & Migration';
       case 'settings':
-        return 'ZaynOps CRM Settings';
+        return 'Settings';
       case 'profile':
-        return 'My Profile & Commercial Target';
+        return 'Sales Targets';
       case 'super-admin':
-        return 'SaaS Super Admin Console';
+        return 'Platform Console';
       case 'search':
-        return 'Unified Search Engine';
+        return 'Search';
       default:
-        return 'Sales CRM';
+        return 'CRM';
     }
   };
 
@@ -99,7 +99,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   return (
     <header
       id="top-header"
-      className="sticky top-0 z-30 flex h-[72px] w-full items-center justify-between border-b border-[var(--border-color)] bg-[var(--bg-card)] px-4 sm:px-8 shadow-xs transition-colors duration-200"
+      className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-slate-200/80 bg-white/95 backdrop-blur-xs px-4 sm:px-8 select-none"
     >
       <div className="flex items-center gap-3 sm:gap-4 flex-1 max-w-xl">
         {/* Mobile Navigation Drawer Button */}
@@ -108,11 +108,11 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             id="mobile-nav-toggle-btn"
             type="button"
             onClick={onToggleMobileMenu}
-            className="md:hidden flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition cursor-pointer shrink-0"
+            className="md:hidden flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 transition cursor-pointer shrink-0"
             title="Open Navigation Menu"
             aria-label="Open Navigation Menu"
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-4 w-4" strokeWidth={1.75} />
           </button>
         )}
 
@@ -120,74 +120,70 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         {!isSuperAdmin ? (
           <div
             onClick={onOpenSearch}
-            className="relative w-full max-w-md hidden sm:flex items-center rounded-xl border border-[var(--border-color)] bg-[var(--input-bg)] py-2 pl-9 pr-3 text-xs text-[var(--text-muted)] hover:border-[var(--color-primary)] transition cursor-pointer shadow-2xs"
+            className="relative w-full max-w-md hidden sm:flex items-center rounded-lg border border-slate-200/90 bg-slate-50/50 py-1.5 pl-9 pr-3 text-xs text-slate-600 hover:border-slate-300 hover:bg-white transition cursor-pointer"
           >
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-[var(--text-muted)]" />
-            <span className="truncate">Search leads, clients, companies, follow-ups...</span>
-            <kbd className="ml-auto hidden md:inline-flex items-center rounded border border-[var(--border-color)] bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]">
+            <Search className="absolute left-3 top-2 h-3.5 w-3.5 text-slate-500" strokeWidth={1.75} />
+            <span className="truncate">Search leads, clients, companies...</span>
+            <kbd className="ml-auto hidden md:inline-flex items-center rounded border border-slate-200 bg-white px-1.5 py-0.2 text-[10px] font-medium text-slate-500">
               ⌘K /
             </kbd>
           </div>
         ) : (
-          <div className="hidden sm:flex items-center gap-2 text-xs font-semibold text-[var(--text-main)]">
-            <ShieldAlert className="h-4 w-4 text-amber-500" />
+          <div className="hidden sm:flex items-center gap-2 text-xs font-semibold text-slate-900">
+            <ShieldAlert className="h-4 w-4 text-amber-500" strokeWidth={1.75} />
             <span>Platform Governance Console</span>
           </div>
         )}
 
         {/* Mobile Page Title with Brand Mark */}
         <div className="sm:hidden flex items-center gap-2">
-          <ZaynLogo size={28} className="shrink-0" />
-          <h1 className="text-sm font-bold text-[var(--text-main)] truncate max-w-[150px]">
-            {isSuperAdmin ? 'Platform Console' : getPageTitle(currentView)}
+          <ZaynLogo size={24} className="shrink-0" />
+          <h1 className="text-sm font-semibold text-slate-900 truncate max-w-[140px]">
+            {isSuperAdmin ? 'Platform' : getPageTitle(currentView)}
           </h1>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-2 sm:gap-2.5">
         {/* Mobile Quick Search Button */}
         {!isSuperAdmin && (
           <button
             id="mobile-search-btn"
             type="button"
             onClick={onOpenSearch}
-            className="sm:hidden flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition cursor-pointer"
+            className="sm:hidden flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:text-slate-900 transition cursor-pointer"
             title="Search CRM"
             aria-label="Search CRM"
           >
-            <Search className="h-4 w-4" />
+            <Search className="h-3.5 w-3.5" strokeWidth={1.75} />
           </button>
         )}
 
-        {/* ZaynOps Quick Theme Selector in TopBar */}
+        {/* ZaynOps Theme Switcher */}
         <div className="relative" ref={themeMenuRef}>
           <button
             type="button"
             id="theme-selector-topbar-btn"
             onClick={() => setShowThemeMenu(!showThemeMenu)}
-            className="flex items-center gap-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-elevated)] px-2.5 py-1.5 text-xs font-semibold text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition cursor-pointer shadow-2xs"
+            className="flex items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition cursor-pointer"
             title="Switch Theme"
           >
             <span
-              className="h-2.5 w-2.5 rounded-full shrink-0 shadow-2xs"
-              style={{ backgroundColor: 'var(--color-primary)' }}
+              className="h-2 w-2 rounded-full shrink-0"
+              style={{ backgroundColor: themeConfig.colorPrimary }}
             />
-            <span className="hidden lg:inline text-[11px] font-medium text-[var(--text-muted)]">Theme:</span>
-            <span className="hidden sm:inline text-xs font-semibold truncate max-w-[110px]">
-              {themeConfig.name.split('&')[0].trim()}
+            <span className="hidden sm:inline text-[11px] text-slate-600 truncate max-w-[95px]">
+              {themeConfig.name.replace('ZaynOps ', '')}
             </span>
-            <ChevronDown className="h-3 w-3 text-[var(--text-muted)] opacity-70" />
+            <ChevronDown className="h-3 w-3 text-slate-500" strokeWidth={1.75} />
           </button>
 
           {showThemeMenu && (
-            <div className="absolute right-0 mt-2 w-72 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-2 shadow-xl z-50 animate-in fade-in zoom-in-95 duration-100">
-              <div className="px-3 py-2 border-b border-[var(--border-color)] flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                  ZaynOps Visual Theme
-                </span>
-                <span className="text-[10px] text-[var(--text-muted)]">Instant Apply</span>
+            <div className="absolute right-0 mt-1.5 w-64 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg z-50 animate-in fade-in zoom-in-95 duration-100">
+              <div className="px-2.5 py-1.5 border-b border-slate-100 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                Visual Environment
               </div>
-              <div className="space-y-1.5 py-2">
+              <div className="space-y-0.5 py-1">
                 {availableThemes.map((t) => {
                   const isSelected = theme === t.id;
                   return (
@@ -198,61 +194,31 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                         setTheme(t.id);
                         setShowThemeMenu(false);
                       }}
-                      className={`w-full flex items-center justify-between p-2 rounded-lg text-left transition cursor-pointer border ${
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition cursor-pointer text-xs ${
                         isSelected
-                          ? 'border-[var(--color-primary)] bg-[var(--bg-hover)]'
-                          : 'border-transparent hover:bg-[var(--bg-hover)]'
+                          ? 'bg-slate-100 font-semibold text-slate-900'
+                          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                       }`}
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div
-                          className="flex h-5 w-5 items-center justify-center rounded-full border shrink-0"
-                          style={{
-                            backgroundColor: t.bgBase,
-                            borderColor: t.borderColor,
-                          }}
-                        >
-                          <span
-                            className="h-2.5 w-2.5 rounded-full"
-                            style={{ backgroundColor: t.colorPrimary }}
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold text-[var(--text-main)] truncate">
-                            {t.name}
-                          </div>
-                          <div className="text-[10px] text-[var(--text-muted)]">
-                            {t.style}
-                          </div>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="h-2.5 w-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: t.colorPrimary }}
+                        />
+                        <span>{t.name}</span>
                       </div>
                       {isSelected && (
-                        <Check
-                          className="h-4 w-4 shrink-0"
-                          style={{ color: 'var(--color-primary)' }}
-                        />
+                        <Check className="h-3.5 w-3.5 text-[#0CB675]" strokeWidth={2.5} />
                       )}
                     </button>
                   );
                 })}
               </div>
-              <div className="pt-2 border-t border-[var(--border-color)] px-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowThemeMenu(false);
-                    onSelectView('settings');
-                  }}
-                  className="w-full text-center text-[11px] font-semibold text-[var(--color-primary)] hover:underline py-1"
-                >
-                  Manage Appearance in Settings →
-                </button>
-              </div>
             </div>
           )}
         </div>
 
-        {/* Real-Time Notification Bell (Company CRM users only) */}
+        {/* Real-Time Notification Bell */}
         {!isSuperAdmin && (
           <NotificationBell
             onSelectLead={onSelectLead}
@@ -261,16 +227,16 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           />
         )}
 
-        {/* Quick Global Add Lead Button */}
+        {/* Global Add Lead CTA */}
         {canCreateLead && (
           <button
             id="global-add-lead-btn"
             type="button"
             onClick={onOpenAddLead}
-            className="zaynos-btn-primary text-xs uppercase tracking-wider py-2 px-3 shadow-xs"
+            className="zaynops-btn-primary text-xs font-semibold py-1.5 px-3 flex items-center gap-1.5 shadow-xs"
           >
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">Add Lead</span>
+            <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+            <span className="hidden sm:inline">New Lead</span>
           </button>
         )}
 
@@ -280,34 +246,23 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             id="user-profile-header-btn"
             type="button"
             onClick={() => setShowProfileMenu(!showProfileMenu)}
-            className="flex h-9 w-9 items-center justify-center rounded-full font-bold text-xs shadow-xs border transition cursor-pointer hover:opacity-90"
-            style={{
-              backgroundColor: 'var(--bg-elevated)',
-              borderColor: 'var(--border-color)',
-              color: 'var(--text-main)',
-            }}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 font-semibold text-xs text-slate-700 border border-slate-200 transition cursor-pointer hover:bg-slate-200"
             title={userProfile?.full_name || 'User Profile'}
           >
             {userInitials}
           </button>
 
           {showProfileMenu && (
-            <div className="absolute right-0 mt-2 w-60 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-2 shadow-xl z-50 animate-in fade-in zoom-in-95 duration-100">
-              <div className="border-b border-[var(--border-color)] px-3 py-2 text-xs">
-                <p className="font-semibold text-[var(--text-main)] truncate">
+            <div className="absolute right-0 mt-1.5 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg z-50 animate-in fade-in zoom-in-95 duration-100">
+              <div className="border-b border-slate-100 px-2.5 py-2">
+                <p className="font-semibold text-xs text-slate-900 truncate">
                   {userProfile?.full_name || 'CRM User'}
                 </p>
-                <p className="text-[var(--text-muted)] text-[11px] truncate">
-                  {userProfile?.email || 'Authenticated User'}
+                <p className="text-slate-500 text-[10px] truncate mt-0.5">
+                  {userProfile?.email}
                 </p>
-                <div
-                  className="mt-1.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-                  style={{
-                    backgroundColor: 'var(--color-primary-subtle)',
-                    color: 'var(--color-primary)',
-                  }}
-                >
-                  Role: {userProfile?.role || 'SALESMAN'}
+                <div className="mt-1.5 inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.2 text-[9px] font-semibold text-slate-700 uppercase tracking-wider">
+                  {userProfile?.role || 'SALESMAN'}
                 </div>
               </div>
 
@@ -319,10 +274,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                     setShowProfileMenu(false);
                     onSelectView('profile');
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition cursor-pointer"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition cursor-pointer"
                 >
-                  <User className="h-3.5 w-3.5 text-[var(--color-primary)]" />
-                  <span>My Profile &amp; Target</span>
+                  <User className="h-3.5 w-3.5 text-slate-500" strokeWidth={1.75} />
+                  <span>My Target &amp; Quota</span>
                 </button>
                 <button
                   type="button"
@@ -330,20 +285,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                     setShowProfileMenu(false);
                     onSelectView('settings');
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition cursor-pointer"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition cursor-pointer"
                 >
-                  <Palette className="h-3.5 w-3.5 text-[var(--text-muted)]" />
-                  <span>Theme &amp; Appearance</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowProfileMenu(false);
-                    onSelectView('notifications');
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-[var(--text-main)] hover:bg-[var(--bg-hover)] transition cursor-pointer"
-                >
-                  <span>Notifications</span>
+                  <Palette className="h-3.5 w-3.5 text-slate-500" strokeWidth={1.75} />
+                  <span>Appearance</span>
                 </button>
                 {userProfile?.role === 'ADMIN' && (
                   <button
@@ -353,10 +298,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                       setShowProfileMenu(false);
                       onSelectView('audit');
                     }}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-[var(--color-primary)] hover:bg-[var(--bg-hover)] transition cursor-pointer"
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition cursor-pointer"
                   >
-                    <ShieldCheck className="h-3.5 w-3.5" />
-                    <span>Security Audit Logs</span>
+                    <ShieldCheck className="h-3.5 w-3.5 text-slate-500" strokeWidth={1.75} />
+                    <span>Audit Logs</span>
                   </button>
                 )}
                 {isSuperAdmin && (
@@ -367,22 +312,22 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                       setShowProfileMenu(false);
                       onSelectView('super-admin');
                     }}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-[var(--color-primary)] hover:bg-[var(--bg-hover)] transition cursor-pointer"
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition cursor-pointer"
                   >
-                    <ShieldAlert className="h-3.5 w-3.5" />
+                    <ShieldAlert className="h-3.5 w-3.5 text-slate-500" strokeWidth={1.75} />
                     <span>Super Admin Console</span>
                   </button>
                 )}
-                <div className="my-1 border-t border-[var(--border-color)]" />
+                <div className="my-1 border-t border-slate-100" />
                 <button
                   type="button"
                   onClick={() => {
                     setShowProfileMenu(false);
                     signOut();
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-[var(--danger)] hover:bg-[var(--bg-hover)] transition cursor-pointer"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                 >
-                  <LogOut className="h-3.5 w-3.5" />
+                  <LogOut className="h-3.5 w-3.5" strokeWidth={1.75} />
                   <span>Sign Out</span>
                 </button>
               </div>

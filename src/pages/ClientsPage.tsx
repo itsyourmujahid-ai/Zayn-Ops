@@ -348,25 +348,25 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              Clients & Customer Accounts
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+              Clients &amp; Accounts
             </h1>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200/80">
               {clients.length} Accounts
             </span>
           </div>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          <p className="text-xs text-slate-500 mt-0.5">
             Long-term client relationship management, post-sale follow-ups, and repeat sales opportunities.
           </p>
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
           {/* Security & Role Scope Indicator */}
-          <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 shadow-2xs">
-            <ShieldCheck className="h-4 w-4 text-emerald-600" />
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200/80 bg-white text-xs font-medium text-slate-600 shadow-2xs">
+            <ShieldCheck className="h-3.5 w-3.5 text-[#0CB675]" strokeWidth={1.75} />
             <span>
-              {isAdmin ? 'All Enterprise Clients (Admin Scope)' : 'My Assigned Customer Portfolio'}
+              {isAdmin ? 'All Clients (Admin)' : 'My Portfolio'}
             </span>
           </div>
 
@@ -376,9 +376,9 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
               type="button"
               id="clients-add-new-btn"
               onClick={() => setIsCreateClientOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition cursor-pointer active:scale-95"
+              className="zaynops-btn-primary py-1.5 px-3.5 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
               <span>Add Client</span>
             </button>
           )}
@@ -386,58 +386,58 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
       </div>
 
       {/* ---------------- Metrics & Summary Strip (Section 15) ---------------- */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Card 1: Total / My Clients */}
-        <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-2xs">
+        <div className="rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
               {isAdmin ? 'Total Clients' : 'My Accounts'}
             </span>
-            <Building2 className="h-4 w-4 text-indigo-600" />
+            <Building2 className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.75} />
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tracking-tight text-slate-900">
               {isAdmin ? stats.total : stats.myClients}
             </span>
-            <span className="text-[11px] font-semibold text-slate-400">
-              {isAdmin ? 'Converted Deals' : 'In Portfolio'}
+            <span className="text-[11px] font-medium text-slate-400">
+              {isAdmin ? 'Converted' : 'Portfolio'}
             </span>
           </div>
         </div>
 
         {/* Card 2: Active Accounts */}
-        <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/40 p-4 shadow-2xs">
+        <div className="rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-emerald-800">Active Accounts</span>
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">Active</span>
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" strokeWidth={1.75} />
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-emerald-950">{stats.active}</span>
-            <span className="text-[11px] font-semibold text-emerald-700">In Business</span>
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span className="text-2xl font-bold tracking-tight text-emerald-700">{stats.active}</span>
+            <span className="text-[11px] font-medium text-slate-400">In Business</span>
           </div>
         </div>
 
         {/* Card 3: Inactive / On Hold (Admin) OR Active Ratio (Salesman) */}
         {isAdmin ? (
-          <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-2xs">
+          <div className="rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500">Inactive / On Hold</span>
-              <Briefcase className="h-4 w-4 text-slate-400" />
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Inactive / On Hold</span>
+              <Briefcase className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.75} />
             </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-800">{stats.inactive}</span>
-              <span className="text-[11px] font-semibold text-slate-400">Dormant</span>
+            <div className="mt-1.5 flex items-baseline gap-2">
+              <span className="text-2xl font-bold tracking-tight text-slate-700">{stats.inactive}</span>
+              <span className="text-[11px] font-medium text-slate-400">Dormant</span>
             </div>
           </div>
         ) : (
-          <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-2xs">
+          <div className="rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500">Direct Portfolio</span>
-              <UserCheck className="h-4 w-4 text-blue-600" />
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Direct Portfolio</span>
+              <UserCheck className="h-3.5 w-3.5 text-slate-400" strokeWidth={1.75} />
             </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">{stats.myClients}</span>
-              <span className="text-[11px] font-semibold text-slate-400">Assigned</span>
+            <div className="mt-1.5 flex items-baseline gap-2">
+              <span className="text-2xl font-bold tracking-tight text-slate-900">{stats.myClients}</span>
+              <span className="text-[11px] font-medium text-slate-400">Assigned</span>
             </div>
           </div>
         )}
@@ -445,19 +445,19 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
         {/* Card 4: Clients Needing Follow-up (Section 15 Mandate) */}
         <div
           onClick={() => setNeedsFollowUpOnly(!needsFollowUpOnly)}
-          className={`rounded-xl border p-4 shadow-2xs transition cursor-pointer ${
+          className={`rounded-xl border p-3.5 shadow-2xs transition cursor-pointer ${
             needsFollowUpOnly
-              ? 'border-amber-400 bg-amber-50/70 ring-2 ring-amber-400/20'
+              ? 'border-amber-400 bg-amber-50/50'
               : stats.needingFollowUpCount > 0
-              ? 'border-amber-200/90 bg-amber-50/40 hover:border-amber-300'
-              : 'border-slate-200/90 bg-white'
+              ? 'border-amber-200 bg-amber-50/30 hover:border-amber-300'
+              : 'border-slate-200/80 bg-white hover:border-slate-300'
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-amber-900">
+            <span className="text-[11px] font-semibold text-amber-900 uppercase tracking-wider">
               Needs Follow-up
             </span>
-            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <AlertTriangle className="h-3.5 w-3.5 text-amber-600" strokeWidth={1.75} />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-black text-amber-950">
@@ -673,13 +673,13 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
                   <div className="mt-2 space-y-1 text-xs text-slate-600">
                     {client.contact_person && (
                       <div className="flex items-center gap-1.5">
-                        <User className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                        <User className="h-3.5 w-3.5 text-slate-500 shrink-0" />
                         <span className="font-semibold text-slate-800">{client.contact_person}</span>
                       </div>
                     )}
                     {client.location && (
-                      <div className="flex items-center gap-1.5 text-slate-500">
-                        <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                      <div className="flex items-center gap-1.5 text-slate-600">
+                        <MapPin className="h-3.5 w-3.5 text-slate-500 shrink-0" />
                         <span>{client.location}</span>
                       </div>
                     )}
@@ -687,9 +687,9 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
 
                   {/* Representative Assignment Badge */}
                   <div className="mt-3.5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                    <span className="text-slate-400 font-medium">Representative:</span>
+                    <span className="text-slate-500 font-medium">Representative:</span>
                     <span className="inline-flex items-center gap-1 font-bold text-slate-800 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md">
-                      <UserCheck className="h-3.5 w-3.5 text-indigo-600" />
+                      <UserCheck className="h-3.5 w-3.5 text-[#0CB675]" />
                       <span>{ownerName}</span>
                     </span>
                   </div>
@@ -698,15 +698,15 @@ export const ClientsPage: React.FC<ClientsPageProps> = ({
                   <div className="mt-3 grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-[11px]">
                     {/* Last Contact */}
                     <div className="bg-slate-50/80 p-2 rounded-lg border border-slate-100">
-                      <span className="text-slate-400 block font-medium">Last Contact:</span>
+                      <span className="text-slate-500 block font-medium">Last Contact:</span>
                       {rel.lastContact ? (
                         <div className="font-semibold text-slate-800 truncate mt-0.5">
-                          <span className="text-indigo-700 font-bold">{rel.lastContact.activity_type}</span>
+                          <span className="text-emerald-700 font-bold">{rel.lastContact.activity_type}</span>
                           <span className="text-slate-400 mx-1">·</span>
                           <span>{formatTimestamp(rel.lastContact.activity_date || rel.lastContact.activity_at)}</span>
                         </div>
                       ) : (
-                        <span className="text-slate-400 italic">No activity yet</span>
+                        <span className="text-slate-500 italic">No activity yet</span>
                       )}
                     </div>
 
