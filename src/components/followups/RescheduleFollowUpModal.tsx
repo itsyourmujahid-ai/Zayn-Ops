@@ -48,6 +48,7 @@ export const RescheduleFollowUpModal: React.FC<RescheduleFollowUpModalProps> = (
       setError('');
       await onReschedule({
         lead_id: followUp.lead_id,
+        client_id: followUp.client_id,
         followup_id: followUp.id,
         new_scheduled_at: combinedDateTime,
         new_action: newAction,

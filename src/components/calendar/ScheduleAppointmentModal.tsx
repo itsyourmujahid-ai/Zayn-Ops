@@ -234,7 +234,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
       const leadIdToStore =
         recordType === 'Lead'
           ? selectedLeadId
-          : selectedClient?.source_lead_id || selectedClientId;
+          : undefined;
 
       const payload: CreateFollowUpInput = {
         lead_id: leadIdToStore,

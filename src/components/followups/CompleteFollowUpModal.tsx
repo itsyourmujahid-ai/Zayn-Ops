@@ -79,6 +79,7 @@ export const CompleteFollowUpModal: React.FC<CompleteFollowUpModalProps> = ({
       setError('');
       await onComplete({
         lead_id: followUp.lead_id,
+        client_id: followUp.client_id,
         followup_id: followUp.id,
         outcome: finalOutcome,
         notes: notes.trim(),

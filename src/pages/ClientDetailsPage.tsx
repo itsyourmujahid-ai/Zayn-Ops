@@ -56,6 +56,7 @@ import {
   updateClient,
   getLeadById,
   subscribeToActivities,
+  subscribeToClientTimeline,
   createActivity,
   subscribeToFollowUps,
   completeFollowUp,
@@ -234,17 +235,41 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
     return client.owner_id === currentId;
   }, [isAdmin, client, userProfile?.id, currentUser?.uid]);
 
-  // Subscribe to activities for this client (via source lead id or direct client id)
+  // All Related Leads (source converted lead, linked won leads, repeat opportunities)
+  const relatedLeads = useMemo(() => {
+    if (!client) return [];
+    const clientPhone = normalizePhone(client.phone);
+    return allLeads.filter((l) => {
+      if (l.record_status === 'deleted') return false;
+      if (l.client_id === client.id) return true;
+      if (l.source_client_id === client.id) return true;
+      if (l.converted_to_client_id === client.id) return true;
+      if (client.source_lead_id && l.id === client.source_lead_id) return true;
+      if (client.related_lead_ids && client.related_lead_ids.includes(l.id)) return true;
+      if (clientPhone && l.normalized_phone && l.normalized_phone === clientPhone) return true;
+      return false;
+    });
+  }, [allLeads, client]);
+
+  // Subscribe to Unified Client Activity Timeline (direct activities + source converted lead + repeat opportunities)
   useEffect(() => {
-    const targetId = client?.source_lead_id || client?.id;
-    if (!targetId) {
+    if (!client?.id) {
       setLoadingActivities(false);
       return;
     }
 
     setLoadingActivities(true);
-    const unsub = subscribeToActivities(
-      targetId,
+    const relatedIds = Array.from(
+      new Set([
+        ...(client.related_lead_ids || []),
+        ...(client.source_lead_id ? [client.source_lead_id] : []),
+        ...relatedLeads.map((l) => l.id),
+      ])
+    );
+
+    const unsub = subscribeToClientTimeline(
+      client.id,
+      relatedIds,
       (acts) => {
         setActivities(acts);
         setLoadingActivities(false);
@@ -256,7 +281,7 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
     );
 
     return () => unsub();
-  }, [client?.id, client?.source_lead_id]);
+  }, [client?.id, client?.source_lead_id, client?.related_lead_ids, relatedLeads]);
 
   // Subscribe to follow-ups for this client
   useEffect(() => {
@@ -265,10 +290,11 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
 
     const unsub = subscribeToFollowUps(
       (allFollowups) => {
-        // Filter follow-ups belonging to the source lead, client id or bearing the client's company name
+        // Filter follow-ups belonging to the client id, source lead, or bearing the client's company name
         const clientFollowUps = allFollowups.filter(
           (f) =>
-            (f.lead_id && (f.lead_id === targetLeadId || f.lead_id === client.id || f.lead_id === client.source_lead_id)) ||
+            f.client_id === client.id ||
+            (f.lead_id && (f.lead_id === targetLeadId || f.lead_id === client.id || (client.source_lead_id && f.lead_id === client.source_lead_id))) ||
             (f.company_name && client.company_name && f.company_name.toLowerCase() === client.company_name.toLowerCase())
         );
         setFollowups(clientFollowUps);
@@ -287,22 +313,6 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
     }, clientId);
     return () => unsub();
   }, [clientId]);
-
-  // All Related Leads (source converted lead, linked won leads, repeat opportunities)
-  const relatedLeads = useMemo(() => {
-    if (!client) return [];
-    const clientPhone = normalizePhone(client.phone);
-    return allLeads.filter((l) => {
-      if (l.record_status === 'deleted') return false;
-      if (l.client_id === client.id) return true;
-      if (l.source_client_id === client.id) return true;
-      if (l.converted_to_client_id === client.id) return true;
-      if (client.source_lead_id && l.id === client.source_lead_id) return true;
-      if (client.related_lead_ids && client.related_lead_ids.includes(l.id)) return true;
-      if (clientPhone && l.normalized_phone && l.normalized_phone === clientPhone) return true;
-      return false;
-    });
-  }, [allLeads, client]);
 
   // Repeat Opportunities derived from leads where source_client_id === client.id
   const repeatOpportunities = useMemo(() => {
@@ -393,7 +403,10 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
     if (!client) return;
     await createActivity({
       ...input,
-      lead_id: client.source_lead_id,
+      client_id: client.id,
+      lead_id: undefined,
+      company_name: client.company_name,
+      client_name: client.company_name,
       metadata: {
         ...input.metadata,
         client_id: client.id,
@@ -404,14 +417,17 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
 
   // Schedule follow-up handler
   const handleScheduleFollowUp = async (data: {
-    lead_id: string;
+    client_id?: string;
+    lead_id?: string;
     action: FollowUpActionType;
     scheduled_at: string;
     assigned_to: string;
     notes?: string;
   }) => {
+    if (!client) return;
     await createFollowUp({
-      lead_id: data.lead_id,
+      client_id: client.id,
+      entity_type: 'Client',
       action: data.action,
       scheduled_at: data.scheduled_at,
       assigned_to: data.assigned_to,
@@ -422,12 +438,18 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
   };
 
   const handleCompleteFollowUp = async (input: CompleteFollowUpInput) => {
-    await completeFollowUp(input);
+    await completeFollowUp({
+      ...input,
+      client_id: input.client_id || client?.id,
+    });
     setSelectedFollowUpForComplete(null);
   };
 
   const handleRescheduleFollowUp = async (input: RescheduleFollowUpInput) => {
-    await rescheduleFollowUp(input);
+    await rescheduleFollowUp({
+      ...input,
+      client_id: input.client_id || client?.id,
+    });
     setSelectedFollowUpForReschedule(null);
   };
 
@@ -437,6 +459,7 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
     }
     await cancelFollowUp({
       lead_id: followUp.lead_id,
+      client_id: followUp.client_id || client?.id,
       followup_id: followUp.id,
       cancellation_reason: 'Cancelled from Client Relationship Dashboard',
     });
@@ -1877,7 +1900,9 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
             : allLeads
         }
         users={usersList}
-        initialLeadId={client.source_lead_id}
+        client={client}
+        targetType="Client"
+        initialClientId={client.id}
         initialAction={scheduleFollowUpAction}
         onClose={() => setIsScheduleFollowUpOpen(false)}
         onSchedule={handleScheduleFollowUp}

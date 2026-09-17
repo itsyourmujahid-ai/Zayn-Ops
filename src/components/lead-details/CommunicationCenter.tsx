@@ -55,7 +55,6 @@ export const CommunicationCenter: React.FC<CommunicationCenterProps> = ({
 }) => {
   const [selectedComposerType, setSelectedComposerType] = useState<CommunicationType>('Call');
 
-  const effectiveId = client ? client.source_lead_id : (lead?.id || '');
   const companyName = client?.company_name || lead?.company_name || '';
   const contactPerson = client?.contact_person || lead?.contact_person || '';
   const phone = client?.phone || lead?.phone || '';
@@ -413,7 +412,9 @@ export const CommunicationCenter: React.FC<CommunicationCenterProps> = ({
       {/* SECTION 3: COMMUNICATION COMPOSER (Section 2, 6, 7) */}
       {hasAccess ? (
         <CommunicationComposer
-          leadId={effectiveId}
+          leadId={lead?.id}
+          clientId={client?.id}
+          entityType={client ? 'Client' : 'Lead'}
           companyName={companyName}
           contactPerson={contactPerson}
           defaultSalesmanId={assignedTo}

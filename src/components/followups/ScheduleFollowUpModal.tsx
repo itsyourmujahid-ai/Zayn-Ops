@@ -7,14 +7,17 @@ import {
   User,
   Clock,
 } from 'lucide-react';
-import { LeadRecord, UserProfile, CreateFollowUpInput, FollowUpActionType } from '../../types/database';
+import { LeadRecord, ClientRecord, UserProfile, CreateFollowUpInput, FollowUpActionType } from '../../types/database';
 import { useAuth } from '../../context/AuthContext';
 
 interface ScheduleFollowUpModalProps {
   isOpen: boolean;
-  leads: LeadRecord[];
+  leads?: LeadRecord[];
+  client?: ClientRecord | null;
+  targetType?: 'lead' | 'client';
   users: UserProfile[];
   initialLeadId?: string;
+  initialClientId?: string;
   initialAction?: FollowUpActionType;
   onClose: () => void;
   onSchedule: (input: CreateFollowUpInput) => Promise<void>;
@@ -22,14 +25,20 @@ interface ScheduleFollowUpModalProps {
 
 export const ScheduleFollowUpModal: React.FC<ScheduleFollowUpModalProps> = ({
   isOpen,
-  leads,
+  leads = [],
+  client,
+  targetType,
   users,
   initialLeadId,
+  initialClientId,
   initialAction = 'Call',
   onClose,
   onSchedule,
 }) => {
   const { userProfile, isAdmin } = useAuth();
+  const isClientContext = targetType === 'client' || !!client || !!initialClientId;
+  const effectiveClientId = client?.id || initialClientId || '';
+
   const [selectedLeadId, setSelectedLeadId] = useState<string>(initialLeadId || leads[0]?.id || '');
   const [action, setAction] = useState<FollowUpActionType>(initialAction);
   const [date, setDate] = useState<string>(() => {
@@ -39,6 +48,9 @@ export const ScheduleFollowUpModal: React.FC<ScheduleFollowUpModalProps> = ({
   });
   const [time, setTime] = useState<string>('10:00');
   const [assignedTo, setAssignedTo] = useState<string>(() => {
+    if (isClientContext && client?.owner_id) {
+      return client.owner_id;
+    }
     if (initialLeadId) {
       const match = leads.find((l) => l.id === initialLeadId);
       if (match?.assigned_to) return match.assigned_to;
@@ -51,50 +63,84 @@ export const ScheduleFollowUpModal: React.FC<ScheduleFollowUpModalProps> = ({
 
   React.useEffect(() => {
     if (isOpen) {
-      const effectiveId = initialLeadId || leads[0]?.id || '';
-      setSelectedLeadId(effectiveId);
-      if (initialAction) setAction(initialAction);
-      const match = leads.find((l) => l.id === effectiveId);
-      if (match?.assigned_to) {
-        setAssignedTo(match.assigned_to);
+      if (isClientContext) {
+        if (client?.owner_id) {
+          setAssignedTo(client.owner_id);
+        } else {
+          setAssignedTo(userProfile?.id || '');
+        }
       } else {
-        setAssignedTo(userProfile?.id || '');
+        const effectiveId = initialLeadId || leads[0]?.id || '';
+        setSelectedLeadId(effectiveId);
+        const match = leads.find((l) => l.id === effectiveId);
+        if (match?.assigned_to) {
+          setAssignedTo(match.assigned_to);
+        } else {
+          setAssignedTo(userProfile?.id || '');
+        }
       }
+      if (initialAction) setAction(initialAction);
       setError('');
     }
-  }, [isOpen, initialLeadId, initialAction, leads, userProfile?.id]);
+  }, [isOpen, initialLeadId, initialAction, leads, userProfile?.id, isClientContext, client]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedLeadId) {
-      setError('Please select a lead for this follow-up.');
-      return;
-    }
     if (!date) {
       setError('Please select a follow-up date.');
       return;
     }
 
-    const selectedLead = leads.find((l) => l.id === selectedLeadId);
     const combinedDateTime = new Date(`${date}T${time || '10:00'}:00`).toISOString();
 
     try {
       setSubmitting(true);
       setError('');
-      await onSchedule({
-        lead_id: selectedLeadId,
-        company_name: selectedLead?.company_name,
-        contact_person: selectedLead?.contact_person,
-        phone: selectedLead?.phone || selectedLead?.whatsapp,
-        priority: selectedLead?.priority,
-        action,
-        scheduled_at: combinedDateTime,
-        notes: notes.trim(),
-        assigned_to: isAdmin && assignedTo ? assignedTo : userProfile?.id,
-        status: 'pending',
-      });
+
+      if (isClientContext) {
+        if (!effectiveClientId) {
+          setError('Please select a valid client for this follow-up.');
+          return;
+        }
+
+        await onSchedule({
+          client_id: effectiveClientId,
+          entity_type: 'Client',
+          company_name: client?.company_name,
+          contact_person: client?.contact_person || client?.name,
+          phone: client?.phone || client?.whatsapp,
+          email: client?.email,
+          action,
+          scheduled_at: combinedDateTime,
+          notes: notes.trim(),
+          assigned_to: isAdmin && assignedTo ? assignedTo : (client?.owner_id || userProfile?.id),
+          status: 'pending',
+        });
+      } else {
+        if (!selectedLeadId) {
+          setError('Please select a lead for this follow-up.');
+          return;
+        }
+
+        const selectedLead = leads.find((l) => l.id === selectedLeadId);
+        await onSchedule({
+          lead_id: selectedLeadId,
+          entity_type: 'Lead',
+          company_name: selectedLead?.company_name,
+          contact_person: selectedLead?.contact_person,
+          phone: selectedLead?.phone || selectedLead?.whatsapp,
+          email: selectedLead?.email,
+          priority: selectedLead?.priority,
+          action,
+          scheduled_at: combinedDateTime,
+          notes: notes.trim(),
+          assigned_to: isAdmin && assignedTo ? assignedTo : userProfile?.id,
+          status: 'pending',
+        });
+      }
+
       onClose();
     } catch (err: any) {
       setError(err.message || 'Failed to schedule follow-up');
@@ -115,9 +161,13 @@ export const ScheduleFollowUpModal: React.FC<ScheduleFollowUpModalProps> = ({
               <CalendarPlus className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900">Schedule Follow-up</h3>
+              <h3 className="text-base font-bold text-slate-900">
+                {isClientContext ? 'Schedule Client Follow-up' : 'Schedule Follow-up'}
+              </h3>
               <p className="text-xs text-slate-500">
-                Plan your next contact touchpoint
+                {isClientContext
+                  ? 'Plan a customer check-in, review, or touchpoint'
+                  : 'Plan your next contact touchpoint'}
               </p>
             </div>
           </div>
@@ -138,30 +188,49 @@ export const ScheduleFollowUpModal: React.FC<ScheduleFollowUpModalProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-          {/* Select Lead */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Select Client / Lead <span className="text-rose-500">*</span>
-            </label>
-            {leads.length === 0 ? (
-              <p className="text-xs text-rose-500 font-medium">
-                No active leads found. Please create a lead first.
-              </p>
-            ) : (
-              <select
-                id="select-schedule-lead"
-                value={selectedLeadId}
-                onChange={(e) => setSelectedLeadId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-800 font-medium focus:border-indigo-500 focus:bg-white focus:outline-none"
-              >
-                {leads.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.company_name} ({l.contact_person || 'No Contact'} • {l.priority} Priority)
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
+          {/* Client mode vs Lead mode target */}
+          {isClientContext ? (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Client Account
+              </label>
+              <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-800 font-semibold">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <span>{client?.company_name || 'Customer Account'}</span>
+                </div>
+                {client?.contact_person && (
+                  <span className="text-slate-500 font-normal text-[11px]">
+                    {client.contact_person}
+                  </span>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Select Lead <span className="text-rose-500">*</span>
+              </label>
+              {leads.length === 0 ? (
+                <p className="text-xs text-rose-500 font-medium">
+                  No active leads found. Please create a lead first.
+                </p>
+              ) : (
+                <select
+                  id="select-schedule-lead"
+                  value={selectedLeadId}
+                  onChange={(e) => setSelectedLeadId(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-800 font-medium focus:border-indigo-500 focus:bg-white focus:outline-none"
+                >
+                  {leads.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.company_name} ({l.contact_person || 'No Contact'} • {l.priority} Priority)
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Action Type */}
@@ -253,7 +322,11 @@ export const ScheduleFollowUpModal: React.FC<ScheduleFollowUpModalProps> = ({
             <textarea
               id="input-schedule-notes"
               rows={3}
-              placeholder="e.g., Check if client reviewed the proposal and answer technical questions..."
+              placeholder={
+                isClientContext
+                  ? "e.g., Routine quarterly satisfaction check-in, review new project needs..."
+                  : "e.g., Check if client reviewed the proposal and answer technical questions..."
+              }
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-800 focus:border-indigo-500 focus:bg-white focus:outline-none resize-none"
@@ -272,7 +345,7 @@ export const ScheduleFollowUpModal: React.FC<ScheduleFollowUpModalProps> = ({
             <button
               id="btn-submit-schedule-followup"
               type="submit"
-              disabled={submitting || leads.length === 0}
+              disabled={submitting || (!isClientContext && leads.length === 0)}
               className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 transition disabled:opacity-50 cursor-pointer"
             >
               <CalendarPlus className="h-4 w-4" />
@@ -284,3 +357,4 @@ export const ScheduleFollowUpModal: React.FC<ScheduleFollowUpModalProps> = ({
     </div>
   );
 };
+

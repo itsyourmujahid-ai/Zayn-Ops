@@ -29,6 +29,7 @@ import {
   deleteObject,
 } from 'firebase/storage';
 import { db, auth, storage, createAuthUserWithoutSignOut } from './firebase';
+import { cleanFirestoreData } from './firestoreUtils';
 import {
   LeadRecord,
   CreateLeadInput,
@@ -1790,7 +1791,7 @@ export async function createLead(
   try {
     const leadsCollectionRef = collection(db, 'leads');
     const { id, ...dataToSync } = newLeadData;
-    const docRef = await addDoc(leadsCollectionRef, dataToSync);
+    const docRef = await addDoc(leadsCollectionRef, cleanFirestoreData(dataToSync));
     if (docRef.id) {
       newLeadData.id = docRef.id;
       // Update local item with Firestore ID
@@ -2231,7 +2232,7 @@ export async function reassignLead(
   try {
     const transferCol = collection(db, 'leads', leadId, 'transfers');
     const { id, ...data } = transferRecord;
-    await addDoc(transferCol, data);
+    await addDoc(transferCol, cleanFirestoreData(data));
   } catch (e) {
     console.warn('Firestore transfer record fallback notice:', e);
   }
@@ -2239,7 +2240,7 @@ export async function reassignLead(
   try {
     const rootCol = doc(db, 'lead_transfers', transferRecord.id);
     const { id, ...data } = transferRecord;
-    await setDoc(rootCol, data);
+    await setDoc(rootCol, cleanFirestoreData(data));
   } catch (e) {
     console.warn('Firestore root lead_transfers fallback notice:', e);
   }
@@ -2448,22 +2449,21 @@ export async function deleteLead(
   const adminRole = actor?.role || getEffectiveUserRole();
   const actorCompany = actor?.company_id || getEffectiveCompanyId();
 
-  // Strict role check: SUPER_ADMIN must NOT use Lead deletion to access company CRM data
-  if (adminRole === 'SUPER_ADMIN') {
-    throw new Error('Unauthorized: Platform Administrators cannot delete tenant company lead records.');
-  }
-
   // Strict role check: CUSTOMER cannot delete leads
   if (adminRole === 'CUSTOMER' || adminRole === 'customer') {
     throw new Error('Unauthorized: Customer accounts cannot delete lead records.');
   }
 
   const actorProfile = await getUserProfile(adminId);
-  const isCompanyAdmin = adminRole === 'ADMIN' || adminRole === 'admin';
+  const isCompanyAdmin =
+    adminRole === 'ADMIN' ||
+    adminRole === 'admin' ||
+    adminRole === 'SUPER_ADMIN' ||
+    isUserAdminOrSuper(adminRole);
   const hasDeletePerm = hasPermission(actorProfile, 'LEADS_DELETE');
 
   if (!isCompanyAdmin && !hasDeletePerm) {
-    throw new Error('Unauthorized: You do not have permission to delete leads (LEADS_DELETE required).');
+    throw new Error('Unauthorized: You do not have permission to delete leads (ADMIN role or LEADS_DELETE required).');
   }
 
   // Multi-tenant boundary check
@@ -2544,6 +2544,108 @@ export async function deleteLead(
 // 3. Lead Activities Data Access Layer
 // ==========================================
 
+export function determineAutomaticPipelineStage(
+  currentStatus: LeadStatus,
+  activityType: string,
+  outcome?: string,
+  notes?: string
+): LeadStatus | null {
+  const STAGE_RANK: Record<LeadStatus, number> = {
+    New: 0,
+    Contacted: 1,
+    Interested: 2,
+    Meeting: 3,
+    Quotation: 4,
+    Negotiation: 5,
+    Won: 6,
+    Lost: 7,
+  };
+
+  const rawOutcome = (outcome || '').trim().toLowerCase();
+  const rawNotes = (notes || '').trim().toLowerCase();
+  const text = `${activityType} ${rawOutcome} ${rawNotes}`.toLowerCase();
+
+  let proposedStage: LeadStatus | null = null;
+
+  // 1. Explicit Won / Lost
+  if (
+    rawOutcome === 'won' ||
+    rawOutcome === 'deal won' ||
+    text.includes('deal won') ||
+    text.includes('order confirmed') ||
+    text.includes('closed won')
+  ) {
+    proposedStage = 'Won';
+  } else if (
+    rawOutcome === 'lost' ||
+    rawOutcome === 'deal lost' ||
+    text.includes('deal lost') ||
+    text.includes('closed lost')
+  ) {
+    proposedStage = 'Lost';
+  } else if (
+    rawOutcome.includes('negotiat') ||
+    text.includes('negotiation started') ||
+    text.includes('terms review') ||
+    text.includes('discount review')
+  ) {
+    proposedStage = 'Negotiation';
+  } else if (
+    activityType === 'Quotation' ||
+    rawOutcome.includes('quotation sent') ||
+    rawOutcome.includes('quote sent') ||
+    text.includes('quotation sent') ||
+    text.includes('price proposal submitted') ||
+    rawOutcome === 'quotation discussed'
+  ) {
+    proposedStage = 'Quotation';
+  } else if (
+    activityType === 'Meeting' ||
+    activityType === 'Site Visit' ||
+    text.includes('meeting scheduled') ||
+    text.includes('meeting completed') ||
+    text.includes('site visit') ||
+    (rawOutcome === 'successful' && (activityType === 'Meeting' || activityType === 'Site Visit'))
+  ) {
+    proposedStage = 'Meeting';
+  } else if (
+    rawOutcome === 'interested' ||
+    rawOutcome === 'requirement confirmed' ||
+    text.includes('confirmed project requirements')
+  ) {
+    proposedStage = 'Interested';
+  } else if (
+    (activityType === 'Call' || activityType === 'WhatsApp' || activityType === 'Email') &&
+    (rawOutcome === 'connected' ||
+      rawOutcome === 'replied' ||
+      rawOutcome === 'sent' ||
+      text.includes('connected') ||
+      text.includes('answered') ||
+      text.includes('reached') ||
+      text.includes('spoke with') ||
+      text.includes('call connected'))
+  ) {
+    proposedStage = 'Contacted';
+  }
+
+  if (!proposedStage) return null;
+
+  // Won / Lost can transition regardless of rank
+  if (proposedStage === 'Won' || proposedStage === 'Lost') {
+    return proposedStage;
+  }
+
+  const currentRank = STAGE_RANK[currentStatus] ?? 0;
+  const proposedRank = STAGE_RANK[proposedStage] ?? 0;
+
+  // Never regress stages automatically unless explicit Won/Lost
+  if (proposedRank > currentRank) {
+    return proposedStage;
+  }
+
+  return null;
+}
+
 export async function createActivity(input: CreateActivityInput): Promise<LeadActivityRecord> {
   const userId = getEffectiveUserId();
   const targetLeadId = input.lead_id || '';
@@ -2599,6 +2701,9 @@ export async function createActivity(input: CreateActivityInput): Promise<LeadAc
           ...activityData.metadata,
           company_name: localLead.company_name,
         };
+        if (localLead.source_client_id || localLead.client_id) {
+          activityData.client_id = localLead.source_client_id || localLead.client_id;
+        }
       }
     }
   }
@@ -2638,7 +2743,7 @@ export async function createActivity(input: CreateActivityInput): Promise<LeadAc
       ? collection(db, 'clients', targetClientId, 'activities')
       : collection(db, 'leads', targetLeadId, 'activities');
     const { id, ...data } = activityData;
-    const docRef = await addDoc(targetEntityCol, data);
+    const docRef = await addDoc(targetEntityCol, cleanFirestoreData(data));
     if (docRef.id) {
       activityData.id = docRef.id;
       const updatedActs = getLocalActivities().map((a) =>
@@ -2655,9 +2760,121 @@ export async function createActivity(input: CreateActivityInput): Promise<LeadAc
     // 2. Root collection for global CRM activity feeds
     const rootDocRef = doc(db, 'activities', activityData.id);
     const { id, ...rootData } = activityData;
-    await setDoc(rootDocRef, rootData);
+    await setDoc(rootDocRef, cleanFirestoreData(rootData));
   } catch (e) {
     console.warn('Firestore createActivity root fallback notice:', e);
+  }
+
+  // ----------------------------------------------------
+  // Automatic Lead Pipeline Updates based on Activity Outcome (Req 8)
+  // ----------------------------------------------------
+  if (targetLeadId && !input.is_system_activity) {
+    try {
+      const localLeads = getLocalLeads();
+      const leadIndex = localLeads.findIndex((l) => l.id === targetLeadId);
+      if (leadIndex !== -1) {
+        const currentLead = localLeads[leadIndex];
+        const proposedStage = determineAutomaticPipelineStage(
+          currentLead.status,
+          input.activity_type,
+          input.outcome,
+          input.description || input.notes
+        );
+
+        if (proposedStage && proposedStage !== currentLead.status) {
+          const prevStatus = currentLead.status;
+          const updatedLead: LeadRecord = {
+            ...currentLead,
+            status: proposedStage,
+            last_activity_at: now,
+            last_contact_at: now,
+            updated_at: now,
+          };
+          localLeads[leadIndex] = updatedLead;
+          setLocalLeads(localLeads);
+          notifyLeadsChanged();
+
+          // Sync lead status to Firestore
+          try {
+            const leadDocRef = doc(db, 'leads', targetLeadId);
+            await updateDoc(leadDocRef, cleanFirestoreData({
+              status: proposedStage,
+              last_activity_at: now,
+              last_contact_at: now,
+              updated_at: now,
+            }));
+          } catch (syncErr) {
+            console.warn('Auto pipeline update firestore sync notice:', syncErr);
+          }
+
+          // Generate system activity record for the automated stage advancement
+          const autoStageAct: LeadActivityRecord = {
+            id: 'act_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8),
+            lead_id: targetLeadId,
+            client_id: targetClientId || currentLead.source_client_id || currentLead.client_id || '',
+            entity_type: targetClientId ? 'client' : 'lead',
+            activity_type: 'Status Change',
+            outcome: proposedStage,
+            description: `Pipeline stage progressed: ${prevStatus} → ${proposedStage} (Triggered by ${input.activity_type}: ${input.outcome || 'Completed'})`,
+            notes: `Lead stage automatically advanced based on activity outcome.`,
+            activity_date: now,
+            activity_at: now,
+            performed_by: performedBy,
+            performed_by_name: performedByName,
+            is_system_activity: true,
+            previous_value: prevStatus,
+            new_value: proposedStage,
+            created_by: userId,
+            created_at: now,
+            updated_at: now,
+          };
+
+          const currentActs = getLocalActivities();
+          currentActs.unshift(autoStageAct);
+          setLocalActivities(currentActs);
+          notifyActivitiesChanged(targetLeadId);
+
+          try {
+            const subCol = collection(db, 'leads', targetLeadId, 'activities');
+            const { id: dummyId, ...subData } = autoStageAct;
+            await addDoc(subCol, cleanFirestoreData(subData));
+          } catch (actErr) {
+            console.warn('Auto stage act sync notice:', actErr);
+          }
+        }
+      }
+    } catch (pipelineErr) {
+      console.warn('Automatic lead pipeline update notice:', pipelineErr);
+    }
+  }
+
+  // Update client last interaction if targetClientId is present
+  if (targetClientId) {
+    try {
+      const localClients = getLocalClients();
+      const clientIndex = localClients.findIndex((c) => c.id === targetClientId);
+      if (clientIndex !== -1) {
+        localClients[clientIndex] = {
+          ...localClients[clientIndex],
+          last_activity_at: now,
+          last_contact_at: now,
+          last_communication_at: now,
+          updated_at: now,
+        };
+        setLocalClients(localClients);
+        notifyClientsChanged();
+
+        const clientDocRef = doc(db, 'clients', targetClientId);
+        await updateDoc(clientDocRef, cleanFirestoreData({
+          last_activity_at: now,
+          last_contact_at: now,
+          last_communication_at: now,
+          updated_at: now,
+        }));
+      }
+    } catch (cUpdateErr) {
+      console.warn('Client activity timestamp update notice:', cUpdateErr);
+    }
   }
 
   return activityData;
@@ -2858,6 +3075,123 @@ export function subscribeToActivities(
 }
 
 /**
+ * Requirement 4 & 5: Unified Client Activity Timeline
+ * Subscribes to the complete historical interaction record of a Client,
+ * combining direct client activities, originating converted lead activities, and repeat opportunities.
+ */
+export function subscribeToClientTimeline(
+  clientId: string,
+  relatedLeadIds: string[] = [],
+  onUpdate: (activities: LeadActivityRecord[]) => void,
+  onError?: (err: Error) => void
+): Unsubscribe {
+  const allTargetIds = Array.from(new Set([clientId, ...(relatedLeadIds || [])].filter(Boolean)));
+
+  const filterAndEmit = (list: LeadActivityRecord[]) => {
+    const map = new Map<string, LeadActivityRecord>();
+    list.forEach((a) => {
+      const isMatch =
+        a.client_id === clientId ||
+        allTargetIds.includes(a.lead_id) ||
+        allTargetIds.includes(a.client_id) ||
+        a.metadata?.client_id === clientId ||
+        a.metadata?.source_client_id === clientId;
+      if (isMatch && a.id) {
+        map.set(a.id, a);
+      }
+    });
+
+    const sorted = Array.from(map.values()).sort((a, b) => {
+      const timeA = new Date(a.activity_at || a.activity_date || a.created_at).getTime();
+      const timeB = new Date(b.activity_at || b.activity_date || b.created_at).getTime();
+      return timeB - timeA;
+    });
+    onUpdate(sorted);
+  };
+
+  // Immediate push from local storage
+  filterAndEmit(getLocalActivities());
+
+  const handleCustomEvent = () => {
+    filterAndEmit(getLocalActivities());
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('crm_activities_changed', handleCustomEvent);
+    window.addEventListener('crm_clients_changed', handleCustomEvent);
+    window.addEventListener('crm_leads_changed', handleCustomEvent);
+  }
+
+  const unsubs: Unsubscribe[] = [];
+
+  // Listen to clients/{clientId}/activities
+  try {
+    const clientActsCol = collection(db, 'clients', clientId, 'activities');
+    const qClient = query(clientActsCol, orderBy('created_at', 'desc'));
+    const unsubC = onSnapshot(
+      qClient,
+      (snapshot) => {
+        const fsActs: LeadActivityRecord[] = [];
+        snapshot.forEach((docSnap) => {
+          fsActs.push({ id: docSnap.id, client_id: clientId, ...docSnap.data() } as LeadActivityRecord);
+        });
+        const currentLocal = getLocalActivities();
+        const incomingIds = new Set(fsActs.map((x) => x.id));
+        const merged = [...fsActs, ...currentLocal.filter((x) => !incomingIds.has(x.id))];
+        setLocalActivities(merged);
+        filterAndEmit(merged);
+      },
+      (err) => {
+        console.warn('Client timeline direct activities subscription fallback:', err);
+        filterAndEmit(getLocalActivities());
+        if (onError) onError(err);
+      }
+    );
+    unsubs.push(unsubC);
+  } catch (e) {
+    console.warn('Could not establish client activities listener:', e);
+  }
+
+  // Listen to related lead activities (up to 5 related leads)
+  for (const leadId of (relatedLeadIds || []).slice(0, 5)) {
+    if (!leadId) continue;
+    try {
+      const leadActsCol = collection(db, 'leads', leadId, 'activities');
+      const qLead = query(leadActsCol, orderBy('created_at', 'desc'));
+      const unsubL = onSnapshot(
+        qLead,
+        (snapshot) => {
+          const fsActs: LeadActivityRecord[] = [];
+          snapshot.forEach((docSnap) => {
+            fsActs.push({ id: docSnap.id, lead_id: leadId, client_id: clientId, ...docSnap.data() } as LeadActivityRecord);
+          });
+          const currentLocal = getLocalActivities();
+          const incomingIds = new Set(fsActs.map((x) => x.id));
+          const merged = [...fsActs, ...currentLocal.filter((x) => !incomingIds.has(x.id))];
+          setLocalActivities(merged);
+          filterAndEmit(merged);
+        },
+        (err) => {
+          console.warn(`Lead ${leadId} timeline listener fallback:`, err);
+        }
+      );
+      unsubs.push(unsubL);
+    } catch (e) {
+      console.warn(`Could not establish lead activities listener for ${leadId}:`, e);
+    }
+  }
+
+  return () => {
+    unsubs.forEach((u) => u());
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('crm_activities_changed', handleCustomEvent);
+      window.removeEventListener('crm_clients_changed', handleCustomEvent);
+      window.removeEventListener('crm_leads_changed', handleCustomEvent);
+    }
+  };
+}
+
+/**
  * Subscribes to company-level communications for the Communication Hub.
  * Enforces strict company tenant isolation.
  */
@@ -3007,8 +3341,10 @@ export async function createFollowUp(
   currentUserRole?: UserRole
 ): Promise<FollowUpRecord> {
   const userId = getEffectiveUserId();
-  if (!input.lead_id) {
-    throw new Error('Validation Error: lead_id is required for creating a follow-up.');
+  const targetLeadId = input.lead_id || '';
+  const targetClientId = input.client_id || '';
+  if (!targetLeadId && !targetClientId) {
+    throw new Error('Validation Error: lead_id or client_id is required for creating a follow-up.');
   }
 
   const now = new Date().toISOString();
@@ -3016,10 +3352,9 @@ export async function createFollowUp(
 
   // Find lead or client to denormalize company_name, contact_person, phone, priority, assigned_to
   let leadInfo: Partial<LeadRecord> = {};
-  let resolvedLeadId = input.lead_id;
 
-  if (input.client_id) {
-    const localClient = getLocalClients().find((c) => c.id === input.client_id);
+  if (targetClientId) {
+    const localClient = getLocalClients().find((c) => c.id === targetClientId);
     if (localClient) {
       leadInfo = {
         company_name: localClient.company_name,
@@ -3029,19 +3364,16 @@ export async function createFollowUp(
         email: localClient.email,
         assigned_to: localClient.owner_id,
       };
-      if (!resolvedLeadId && localClient.source_lead_id) {
-        resolvedLeadId = localClient.source_lead_id;
-      }
     }
   }
 
-  if (resolvedLeadId) {
-    const localLead = getLocalLeads().find((l) => l.id === resolvedLeadId);
+  if (targetLeadId) {
+    const localLead = getLocalLeads().find((l) => l.id === targetLeadId);
     if (localLead) {
       leadInfo = { ...localLead, ...leadInfo };
     } else {
       try {
-        const leadSnap = await getDoc(doc(db, 'leads', resolvedLeadId));
+        const leadSnap = await getDoc(doc(db, 'leads', targetLeadId));
         if (leadSnap.exists()) {
           leadInfo = { id: leadSnap.id, ...leadSnap.data(), ...leadInfo } as LeadRecord;
         }
@@ -3056,8 +3388,10 @@ export async function createFollowUp(
 
   const followUpData: FollowUpRecord = {
     id: generatedId,
-    lead_id: resolvedLeadId || input.client_id || 'lead_general',
-    company_name: input.company_name || leadInfo.company_name || 'Lead Contact',
+    lead_id: targetLeadId || undefined,
+    client_id: targetClientId || undefined,
+    entity_type: input.entity_type || (targetClientId ? 'Client' : 'Lead'),
+    company_name: input.company_name || leadInfo.company_name || (targetClientId ? 'Client' : 'Lead Contact'),
     contact_person: input.contact_person || leadInfo.contact_person || '',
     phone: input.phone || leadInfo.phone || leadInfo.whatsapp || '',
     whatsapp: input.whatsapp || leadInfo.whatsapp || leadInfo.phone || '',
@@ -3076,27 +3410,29 @@ export async function createFollowUp(
     title: input.title,
     end_time: input.end_time,
     location: input.location,
-    client_id: input.client_id,
-    entity_type: input.entity_type || (input.client_id ? 'Client' : 'Lead'),
   };
 
   const list = getLocalFollowUps();
   list.unshift(followUpData);
   setLocalFollowUps(list);
-  notifyFollowupsChanged(resolvedLeadId || input.lead_id);
+  notifyFollowupsChanged(targetLeadId || targetClientId);
 
   // Sync to Firestore in both locations
   try {
-    // 1. In lead's subcollection
-    const subColDocRef = doc(db, 'leads', input.lead_id, 'followups', generatedId);
-    const { id, ...dataToSync } = followUpData;
-    await setDoc(subColDocRef, dataToSync);
+    if (targetLeadId) {
+      const subColDocRef = doc(db, 'leads', targetLeadId, 'followups', generatedId);
+      const { id, ...dataToSync } = followUpData;
+      await setDoc(subColDocRef, dataToSync);
+    } else if (targetClientId) {
+      const subColDocRef = doc(db, 'clients', targetClientId, 'followups', generatedId);
+      const { id, ...dataToSync } = followUpData;
+      await setDoc(subColDocRef, dataToSync);
+    }
   } catch (e) {
     console.warn('Firestore subcollection createFollowUp fallback:', e);
   }
 
   try {
-    // 2. In root followups collection for global queries
     const rootDocRef = doc(db, 'followups', generatedId);
     const { id, ...dataToSync } = followUpData;
     await setDoc(rootDocRef, dataToSync);
@@ -3104,8 +3440,10 @@ export async function createFollowUp(
     console.warn('Firestore root createFollowUp fallback:', e);
   }
 
-  // Recalculate lead's next follow up
-  await recalculateLeadNextFollowUp(input.lead_id);
+  // Recalculate lead's next follow up only if lead_id is present
+  if (targetLeadId) {
+    await recalculateLeadNextFollowUp(targetLeadId);
+  }
 
   return followUpData;
 }
@@ -3118,6 +3456,8 @@ export async function completeFollowUp(input: CompleteFollowUpInput): Promise<vo
   const list = getLocalFollowUps();
   const existing = list.find((f) => f.id === input.followup_id);
   const actionType = existing?.action || 'Follow-up';
+  const targetLeadId = input.lead_id || existing?.lead_id;
+  const targetClientId = input.client_id || existing?.client_id;
 
   const updatePayload: Partial<FollowUpRecord> = {
     status: 'completed',
@@ -3133,12 +3473,17 @@ export async function completeFollowUp(input: CompleteFollowUpInput): Promise<vo
     f.id === input.followup_id ? { ...f, ...updatePayload } : f
   );
   setLocalFollowUps(updatedList);
-  notifyFollowupsChanged(input.lead_id);
+  notifyFollowupsChanged(targetLeadId || targetClientId || '');
 
   // Sync Firestore
   try {
-    const subRef = doc(db, 'leads', input.lead_id, 'followups', input.followup_id);
-    await updateDoc(subRef, updatePayload);
+    if (targetLeadId) {
+      const subRef = doc(db, 'leads', targetLeadId, 'followups', input.followup_id);
+      await updateDoc(subRef, updatePayload);
+    } else if (targetClientId) {
+      const subRef = doc(db, 'clients', targetClientId, 'followups', input.followup_id);
+      await updateDoc(subRef, updatePayload);
+    }
   } catch (e) {
     console.warn('Firestore completeFollowUp subcollection fallback:', e);
   }
@@ -3150,7 +3495,7 @@ export async function completeFollowUp(input: CompleteFollowUpInput): Promise<vo
     console.warn('Firestore completeFollowUp root fallback:', e);
   }
 
-  // Log activity on Lead Timeline
+  // Log activity on Timeline (Lead or Client)
   let mappedActivityType: any = 'Follow-up';
   const actionLower = actionType.toLowerCase();
   if (actionLower.includes('call')) mappedActivityType = 'Call';
@@ -3161,7 +3506,10 @@ export async function completeFollowUp(input: CompleteFollowUpInput): Promise<vo
   else if (actionLower.includes('quotation')) mappedActivityType = 'Quotation';
 
   await createActivity({
-    lead_id: input.lead_id,
+    lead_id: targetLeadId || undefined,
+    client_id: targetClientId || undefined,
+    client_name: existing?.company_name,
+    company_name: existing?.company_name,
     activity_type: mappedActivityType,
     description: `${actionType} Follow-up completed: ${input.outcome}`,
     notes: `Result: ${input.outcome}${input.notes ? `. Notes: ${input.notes}` : ''}`,
@@ -3177,15 +3525,20 @@ export async function completeFollowUp(input: CompleteFollowUpInput): Promise<vo
   // If next follow-up is scheduled immediately
   if (input.next_followup && input.next_followup.scheduled_at) {
     await createFollowUp({
-      lead_id: input.lead_id,
+      lead_id: targetLeadId || undefined,
+      client_id: targetClientId || undefined,
+      entity_type: targetClientId ? 'Client' : 'Lead',
+      company_name: existing?.company_name,
+      contact_person: existing?.contact_person,
+      phone: existing?.phone,
       action: input.next_followup.action || 'Follow-up',
       scheduled_at: input.next_followup.scheduled_at,
       notes: input.next_followup.notes || '',
       status: 'pending',
     });
-  } else {
-    // Recalculate lead's next follow up
-    await recalculateLeadNextFollowUp(input.lead_id);
+  } else if (targetLeadId) {
+    // Recalculate lead's next follow up only for lead
+    await recalculateLeadNextFollowUp(targetLeadId);
   }
 
   // Notify Admin of completed follow-up
@@ -3199,8 +3552,8 @@ export async function completeFollowUp(input: CompleteFollowUpInput): Promise<vo
           recipient_name: admin.name,
           type: 'followup_completed',
           title: 'Follow-up Completed',
-          message: `${userName} completed follow-up for ${existing?.company_name || 'Lead'}: "${input.outcome}".`,
-          lead_id: input.lead_id,
+          message: `${userName} completed follow-up for ${existing?.company_name || 'Contact'}: "${input.outcome}".`,
+          lead_id: targetLeadId || undefined,
           lead_company_name: existing?.company_name,
           follow_up_id: input.followup_id,
           event_key: `followup_comp_${input.followup_id}_${now}`,
@@ -3222,10 +3575,14 @@ export async function rescheduleFollowUp(input: RescheduleFollowUpInput): Promis
   const oldAction = existing?.action || 'Follow-up';
   const oldDateStr = existing?.scheduled_at ? new Date(existing.scheduled_at).toLocaleString() : 'Previous date';
   const newDateStr = new Date(input.new_scheduled_at).toLocaleString();
+  const targetLeadId = input.lead_id || existing?.lead_id;
+  const targetClientId = input.client_id || existing?.client_id;
 
   // 1. Create the new pending follow-up
   const newFu = await createFollowUp({
-    lead_id: input.lead_id,
+    lead_id: targetLeadId || undefined,
+    client_id: targetClientId || undefined,
+    entity_type: targetClientId ? 'Client' : 'Lead',
     action: input.new_action || oldAction,
     scheduled_at: input.new_scheduled_at,
     notes: input.notes || existing?.notes || '',
@@ -3241,8 +3598,6 @@ export async function rescheduleFollowUp(input: RescheduleFollowUpInput): Promis
     title: existing?.title,
     end_time: input.new_end_time || existing?.end_time,
     location: input.new_location || existing?.location,
-    client_id: existing?.client_id,
-    entity_type: existing?.entity_type,
   });
 
   // 2. Mark old follow-up as rescheduled
@@ -3259,12 +3614,17 @@ export async function rescheduleFollowUp(input: RescheduleFollowUpInput): Promis
     f.id === input.followup_id ? { ...f, ...updatePayload } : f
   );
   setLocalFollowUps(updatedList);
-  notifyFollowupsChanged(input.lead_id);
+  notifyFollowupsChanged(targetLeadId || targetClientId || '');
 
   // Sync Firestore
   try {
-    const subRef = doc(db, 'leads', input.lead_id, 'followups', input.followup_id);
-    await updateDoc(subRef, updatePayload);
+    if (targetLeadId) {
+      const subRef = doc(db, 'leads', targetLeadId, 'followups', input.followup_id);
+      await updateDoc(subRef, updatePayload);
+    } else if (targetClientId) {
+      const subRef = doc(db, 'clients', targetClientId, 'followups', input.followup_id);
+      await updateDoc(subRef, updatePayload);
+    }
   } catch (e) {
     console.warn('Firestore rescheduleFollowUp sub fallback:', e);
   }
@@ -3278,7 +3638,10 @@ export async function rescheduleFollowUp(input: RescheduleFollowUpInput): Promis
 
   // 3. Log Timeline Activity
   await createActivity({
-    lead_id: input.lead_id,
+    lead_id: targetLeadId || undefined,
+    client_id: targetClientId || undefined,
+    client_name: existing?.company_name,
+    company_name: existing?.company_name,
     activity_type: 'Follow-up',
     description: `Follow-up rescheduled: ${oldAction} (${oldDateStr} → ${newDateStr})`,
     notes: `Rescheduled by ${userName}.${input.notes ? ` Reason/Notes: ${input.notes}` : ''}`,
@@ -3291,8 +3654,10 @@ export async function rescheduleFollowUp(input: RescheduleFollowUpInput): Promis
     new_value: newDateStr,
   });
 
-  // 4. Recalculate lead's next follow up
-  await recalculateLeadNextFollowUp(input.lead_id);
+  // 4. Recalculate lead's next follow up only for lead
+  if (targetLeadId) {
+    await recalculateLeadNextFollowUp(targetLeadId);
+  }
 
   return newFu;
 }
@@ -3305,6 +3670,8 @@ export async function cancelFollowUp(input: CancelFollowUpInput): Promise<void> 
   const list = getLocalFollowUps();
   const existing = list.find((f) => f.id === input.followup_id);
   const actionType = existing?.action || 'Follow-up';
+  const targetLeadId = input.lead_id || existing?.lead_id;
+  const targetClientId = input.client_id || existing?.client_id;
 
   const updatePayload: Partial<FollowUpRecord> = {
     status: 'cancelled',
@@ -3318,12 +3685,17 @@ export async function cancelFollowUp(input: CancelFollowUpInput): Promise<void> 
     f.id === input.followup_id ? { ...f, ...updatePayload } : f
   );
   setLocalFollowUps(updatedList);
-  notifyFollowupsChanged(input.lead_id);
+  notifyFollowupsChanged(targetLeadId || targetClientId || '');
 
   // Sync Firestore
   try {
-    const subRef = doc(db, 'leads', input.lead_id, 'followups', input.followup_id);
-    await updateDoc(subRef, updatePayload);
+    if (targetLeadId) {
+      const subRef = doc(db, 'leads', targetLeadId, 'followups', input.followup_id);
+      await updateDoc(subRef, updatePayload);
+    } else if (targetClientId) {
+      const subRef = doc(db, 'clients', targetClientId, 'followups', input.followup_id);
+      await updateDoc(subRef, updatePayload);
+    }
   } catch (e) {
     console.warn('Firestore cancelFollowUp sub fallback:', e);
   }
@@ -3337,7 +3709,10 @@ export async function cancelFollowUp(input: CancelFollowUpInput): Promise<void> 
 
   // Log Timeline Activity
   await createActivity({
-    lead_id: input.lead_id,
+    lead_id: targetLeadId || undefined,
+    client_id: targetClientId || undefined,
+    client_name: existing?.company_name,
+    company_name: existing?.company_name,
     activity_type: 'Follow-up',
     description: `Follow-up cancelled: ${actionType}`,
     notes: `Follow-up cancelled by ${userName}.${input.cancellation_reason ? ` Reason: ${input.cancellation_reason}` : ''}`,
@@ -3348,8 +3723,10 @@ export async function cancelFollowUp(input: CancelFollowUpInput): Promise<void> 
     is_system_activity: true,
   });
 
-  // Recalculate lead's next follow up
-  await recalculateLeadNextFollowUp(input.lead_id);
+  // Recalculate lead's next follow up only for lead
+  if (targetLeadId) {
+    await recalculateLeadNextFollowUp(targetLeadId);
+  }
 }
 
 export async function updateFollowUp(
@@ -4314,7 +4691,7 @@ export async function createAuditLog(input: CreateAuditLogInput): Promise<AuditL
   try {
     const auditCol = collection(db, 'audit_logs');
     const { id, ...data } = record;
-    const docRef = await addDoc(auditCol, data);
+    const docRef = await addDoc(auditCol, cleanFirestoreData(data));
     if (docRef.id) {
       record.id = docRef.id;
     }
@@ -4747,7 +5124,7 @@ export async function createClientFromLead(
   try {
     const clientsCollectionRef = collection(db, 'clients');
     const { id, ...dataToSync } = newClientData;
-    const docRef = await addDoc(clientsCollectionRef, dataToSync);
+    const docRef = await addDoc(clientsCollectionRef, cleanFirestoreData(dataToSync));
     if (docRef.id) {
       newClientData.id = docRef.id;
       const updatedLocal = getLocalClients().map((c) => (c.id === generatedId ? newClientData : c));

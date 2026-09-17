@@ -42,6 +42,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { createAuditLog } from './dal';
+import { cleanFirestoreData } from './firestoreUtils';
 
 const VALID_PRIORITIES: Priority[] = ['Hot', 'Warm', 'Cold'];
 const VALID_LEAD_STATUSES: LeadStatus[] = [
@@ -602,34 +603,34 @@ export function validateAndDetectDuplicates(
       warningCount++;
     }
 
-    // Build the final normalized record
+    // Build the final normalized record (ensure no undefined values are introduced)
     const normalizedData: Record<string, any> = {
       company_name: rawCompanyName,
-      contact_person: rawContactPerson || undefined,
-      phone: rawPhone || undefined,
-      whatsapp: rawWhatsApp || undefined,
-      email: normEmail || undefined,
-      location: rawLocation || undefined,
-      address: rawAddress || undefined,
-      notes: rawNotes || undefined,
-      normalized_phone: normPhone || undefined,
-      normalized_whatsapp: normWhatsApp || undefined,
-      normalized_email: normEmail || undefined,
-      normalized_company_name: normCompany || undefined,
+      contact_person: rawContactPerson || '',
+      phone: rawPhone || '',
+      whatsapp: rawWhatsApp || '',
+      email: normEmail || '',
+      location: rawLocation || '',
+      address: rawAddress || '',
+      notes: rawNotes || '',
     };
+    if (normPhone) normalizedData.normalized_phone = normPhone;
+    if (normWhatsApp) normalizedData.normalized_whatsapp = normWhatsApp;
+    if (normEmail) normalizedData.normalized_email = normEmail;
+    if (normCompany) normalizedData.normalized_company_name = normCompany;
 
     if (importType === 'leads' || importType === 'clients_and_leads') {
       normalizedData.lead_type = mapped.lead_type || 'Commercial Client';
       normalizedData.source = mapped.source || 'Bulk Import';
       normalizedData.priority = normalizedPriority;
       normalizedData.status = normalizedLeadStatus;
-      normalizedData.project_name = mapped.project_name || undefined;
-      normalizedData.project_type = mapped.project_type || undefined;
-      normalizedData.project_location = mapped.project_location || undefined;
-      normalizedData.requirement = mapped.requirement || undefined;
-      normalizedData.estimated_value = parsedEstimatedValue;
-      normalizedData.expected_closing_date = mapped.expected_closing_date || undefined;
-      normalizedData.next_followup_date = mapped.next_followup_date || undefined;
+      if (mapped.project_name) normalizedData.project_name = mapped.project_name;
+      if (mapped.project_type) normalizedData.project_type = mapped.project_type;
+      if (mapped.project_location) normalizedData.project_location = mapped.project_location;
+      if (mapped.requirement) normalizedData.requirement = mapped.requirement;
+      normalizedData.estimated_value = parsedEstimatedValue || 0;
+      if (mapped.expected_closing_date) normalizedData.expected_closing_date = mapped.expected_closing_date;
+      if (mapped.next_followup_date) normalizedData.next_followup_date = mapped.next_followup_date;
       normalizedData.assigned_to = resolvedSalesman.uid === 'unassigned' ? '' : resolvedSalesman.uid;
       normalizedData.assigned_to_name = resolvedSalesman.name;
     }
@@ -765,22 +766,22 @@ export async function executeBatchedImport(
       if (importType === 'leads') {
         if (item.resolvedAction === 'create') {
           const newDocRef = doc(collection(db, 'leads'));
-          const leadPayload = {
+          const leadPayload = cleanFirestoreData({
             ...item.normalized,
             id: newDocRef.id,
             company_id: companyId,
-            client_id: item.linkedClientId || undefined,
+            client_id: item.linkedClientId || '',
             created_by: currentUser.uid,
             created_at: now,
             updated_at: now,
             record_status: 'active',
-          };
+          });
           batch.set(newDocRef, leadPayload);
           createdLeadsLocal.push(leadPayload);
 
           // Add Initial Activity
           const actRef = doc(collection(db, `leads/${newDocRef.id}/activities`));
-          batch.set(actRef, {
+          const actPayload = cleanFirestoreData({
             id: actRef.id,
             lead_id: newDocRef.id,
             company_id: companyId,
@@ -792,6 +793,7 @@ export async function executeBatchedImport(
             created_by: currentUser.uid,
             created_at: now,
           });
+          batch.set(actRef, actPayload);
 
           createdCount++;
           newLeadsCount++;
@@ -802,24 +804,24 @@ export async function executeBatchedImport(
           const safeUpdate: Record<string, any> = {
             updated_at: now,
           };
-          if (item.normalized.contact_person) safeUpdate.contact_person = item.normalized.contact_person;
-          if (item.normalized.phone) safeUpdate.phone = item.normalized.phone;
-          if (item.normalized.whatsapp) safeUpdate.whatsapp = item.normalized.whatsapp;
-          if (item.normalized.email) safeUpdate.email = item.normalized.email;
-          if (item.normalized.location) safeUpdate.location = item.normalized.location;
-          if (item.normalized.notes) safeUpdate.notes = item.normalized.notes;
+          if (item.normalized.contact_person !== undefined) safeUpdate.contact_person = item.normalized.contact_person;
+          if (item.normalized.phone !== undefined) safeUpdate.phone = item.normalized.phone;
+          if (item.normalized.whatsapp !== undefined) safeUpdate.whatsapp = item.normalized.whatsapp;
+          if (item.normalized.email !== undefined) safeUpdate.email = item.normalized.email;
+          if (item.normalized.location !== undefined) safeUpdate.location = item.normalized.location;
+          if (item.normalized.notes !== undefined) safeUpdate.notes = item.normalized.notes;
           if (item.normalized.priority) safeUpdate.priority = item.normalized.priority;
           if (item.normalized.status) safeUpdate.status = item.normalized.status;
-          if (item.normalized.estimated_value) safeUpdate.estimated_value = item.normalized.estimated_value;
-          if (item.normalized.requirement) safeUpdate.requirement = item.normalized.requirement;
+          if (item.normalized.estimated_value !== undefined) safeUpdate.estimated_value = item.normalized.estimated_value;
+          if (item.normalized.requirement !== undefined) safeUpdate.requirement = item.normalized.requirement;
           if (item.linkedClientId) safeUpdate.client_id = item.linkedClientId;
 
-          batch.update(docRef, safeUpdate);
+          batch.update(docRef, cleanFirestoreData(safeUpdate));
           updatedLeadsLocal.push({ id: item.duplicateRecordId, ...safeUpdate });
 
           // Add Update Activity
           const actRef = doc(collection(db, `leads/${item.duplicateRecordId}/activities`));
-          batch.set(actRef, {
+          const actPayload = cleanFirestoreData({
             id: actRef.id,
             lead_id: item.duplicateRecordId,
             company_id: companyId,
@@ -831,13 +833,14 @@ export async function executeBatchedImport(
             created_by: currentUser.uid,
             created_at: now,
           });
+          batch.set(actRef, actPayload);
 
           updatedCount++;
         }
       } else if (importType === 'clients') {
         if (item.resolvedAction === 'create') {
           const newDocRef = doc(collection(db, 'clients'));
-          const clientPayload = {
+          const clientPayload = cleanFirestoreData({
             ...item.normalized,
             id: newDocRef.id,
             company_id: companyId,
@@ -847,7 +850,7 @@ export async function executeBatchedImport(
             created_at: now,
             updated_at: now,
             record_status: 'active',
-          };
+          });
           batch.set(newDocRef, clientPayload);
           createdClientsLocal.push(clientPayload);
           createdCount++;
@@ -857,16 +860,16 @@ export async function executeBatchedImport(
           const safeUpdate: Record<string, any> = {
             updated_at: now,
           };
-          if (item.normalized.contact_person) safeUpdate.contact_person = item.normalized.contact_person;
-          if (item.normalized.phone) safeUpdate.phone = item.normalized.phone;
-          if (item.normalized.whatsapp) safeUpdate.whatsapp = item.normalized.whatsapp;
-          if (item.normalized.email) safeUpdate.email = item.normalized.email;
-          if (item.normalized.location) safeUpdate.location = item.normalized.location;
-          if (item.normalized.address) safeUpdate.address = item.normalized.address;
-          if (item.normalized.notes) safeUpdate.notes = item.normalized.notes;
+          if (item.normalized.contact_person !== undefined) safeUpdate.contact_person = item.normalized.contact_person;
+          if (item.normalized.phone !== undefined) safeUpdate.phone = item.normalized.phone;
+          if (item.normalized.whatsapp !== undefined) safeUpdate.whatsapp = item.normalized.whatsapp;
+          if (item.normalized.email !== undefined) safeUpdate.email = item.normalized.email;
+          if (item.normalized.location !== undefined) safeUpdate.location = item.normalized.location;
+          if (item.normalized.address !== undefined) safeUpdate.address = item.normalized.address;
+          if (item.normalized.notes !== undefined) safeUpdate.notes = item.normalized.notes;
           if (item.normalized.client_status) safeUpdate.status = item.normalized.client_status;
 
-          batch.update(docRef, safeUpdate);
+          batch.update(docRef, cleanFirestoreData(safeUpdate));
           updatedClientsLocal.push({ id: item.duplicateRecordId, ...safeUpdate });
           updatedCount++;
         }
@@ -878,7 +881,7 @@ export async function executeBatchedImport(
         if (!resolvedClientId) {
           const clientDocRef = doc(collection(db, 'clients'));
           resolvedClientId = clientDocRef.id;
-          const clientPayload = {
+          const clientPayload = cleanFirestoreData({
             id: clientDocRef.id,
             company_id: companyId,
             company_name: item.normalized.company_name,
@@ -897,7 +900,7 @@ export async function executeBatchedImport(
             created_at: now,
             updated_at: now,
             record_status: 'active',
-          };
+          });
           batch.set(clientDocRef, clientPayload);
           createdClientsLocal.push(clientPayload);
           newClientsCount++;
@@ -905,19 +908,19 @@ export async function executeBatchedImport(
           // Update approved client fields
           const clientDocRef = doc(db, 'clients', resolvedClientId);
           const safeClientUpdate: Record<string, any> = { updated_at: now };
-          if (item.normalized.phone) safeClientUpdate.phone = item.normalized.phone;
-          if (item.normalized.email) safeClientUpdate.email = item.normalized.email;
-          if (item.normalized.contact_person) safeClientUpdate.contact_person = item.normalized.contact_person;
-          batch.update(clientDocRef, safeClientUpdate);
+          if (item.normalized.phone !== undefined) safeClientUpdate.phone = item.normalized.phone;
+          if (item.normalized.email !== undefined) safeClientUpdate.email = item.normalized.email;
+          if (item.normalized.contact_person !== undefined) safeClientUpdate.contact_person = item.normalized.contact_person;
+          batch.update(clientDocRef, cleanFirestoreData(safeClientUpdate));
           updatedClientsLocal.push({ id: resolvedClientId, ...safeClientUpdate });
         }
 
         // 2. Create the associated Lead attached to this Client
         const leadDocRef = doc(collection(db, 'leads'));
-        const leadPayload = {
+        const leadPayload = cleanFirestoreData({
           id: leadDocRef.id,
           company_id: companyId,
-          client_id: resolvedClientId,
+          client_id: resolvedClientId || '',
           company_name: item.normalized.company_name,
           contact_person: item.normalized.contact_person || '',
           phone: item.normalized.phone || '',
@@ -943,13 +946,13 @@ export async function executeBatchedImport(
           created_at: now,
           updated_at: now,
           record_status: 'active',
-        };
+        });
         batch.set(leadDocRef, leadPayload);
         createdLeadsLocal.push(leadPayload);
 
         // Add Initial Activity
         const actRef = doc(collection(db, `leads/${leadDocRef.id}/activities`));
-        batch.set(actRef, {
+        const actPayload = cleanFirestoreData({
           id: actRef.id,
           lead_id: leadDocRef.id,
           company_id: companyId,
@@ -961,6 +964,7 @@ export async function executeBatchedImport(
           created_by: currentUser.uid,
           created_at: now,
         });
+        batch.set(actRef, actPayload);
 
         createdCount++;
         newLeadsCount++;
@@ -1052,13 +1056,13 @@ export async function executeBatchedImport(
     mode,
     duplicate_action: duplicateAction,
     salesman_mapping: salesmanMapping,
-    error_details: errorDetails.length > 0 ? errorDetails.slice(0, 50) : undefined,
+    error_details: errorDetails.length > 0 ? errorDetails.slice(0, 50) : [],
   };
 
   // Record to import_jobs in Firestore
   try {
     const jobDocRef = doc(db, 'import_jobs', jobId);
-    await setDoc(jobDocRef, jobRecord);
+    await setDoc(jobDocRef, cleanFirestoreData(jobRecord));
   } catch (err) {
     console.warn('Could not persist import_jobs record to Firestore:', err);
   }

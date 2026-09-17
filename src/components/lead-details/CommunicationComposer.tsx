@@ -24,7 +24,9 @@ import { CreateActivityInput, FollowUpActionType } from '../../types/database';
 import { useAuth } from '../../context/AuthContext';
 
 interface CommunicationComposerProps {
-  leadId: string;
+  leadId?: string;
+  clientId?: string;
+  entityType?: 'Lead' | 'Client';
   companyName: string;
   contactPerson?: string;
   defaultSalesmanId: string;
@@ -90,6 +92,8 @@ const TYPE_CONFIG: Record<
 
 export const CommunicationComposer: React.FC<CommunicationComposerProps> = ({
   leadId,
+  clientId,
+  entityType,
   companyName,
   contactPerson,
   defaultSalesmanId,
@@ -154,9 +158,9 @@ export const CommunicationComposer: React.FC<CommunicationComposerProps> = ({
     e.preventDefault();
     setError(null);
 
-    // 1. Validation Checks
-    if (!leadId) {
-      setError('Lead ID is required to save communication activity.');
+    // 1. Validation Checks: Either leadId or clientId must be present
+    if (!leadId && !clientId) {
+      setError('Target lead or client is required to save communication activity.');
       return;
     }
 
@@ -193,6 +197,7 @@ export const CommunicationComposer: React.FC<CommunicationComposerProps> = ({
     const metadataPayload: Record<string, any> = {
       communication_source: 'communication_center_composer',
       company_name: companyName,
+      client_id: clientId,
     };
 
     if (communicationType === 'WhatsApp') {
@@ -233,7 +238,11 @@ export const CommunicationComposer: React.FC<CommunicationComposerProps> = ({
     const nowIso = new Date().toISOString();
 
     const activityInput: CreateActivityInput = {
-      lead_id: leadId,
+      lead_id: leadId || undefined,
+      client_id: clientId || undefined,
+      client_name: clientId ? companyName : undefined,
+      company_name: companyName,
+      contact_person: contactPerson,
       activity_type: communicationType,
       outcome: outcome || '',
       description: fullDescription || `${communicationType} interaction recorded (${outcome || 'Completed'}).`,

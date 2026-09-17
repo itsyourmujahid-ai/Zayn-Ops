@@ -405,6 +405,8 @@ export interface LeadRecord {
   assigned_to: string; // User UID of the salesman responsible
   created_at: string; // ISO string
   updated_at: string; // ISO string
+  last_activity_at?: string; // ISO string of most recent logged activity
+  last_contact_at?: string; // ISO string of most recent contact
   // Phase O: Client Conversion Relations
   converted_to_client_id?: string; // ID of the converted Client record in clients collection
   converted_at?: string; // ISO timestamp of conversion
@@ -477,6 +479,7 @@ export interface ClientRecord {
   created_at: string; // ISO string
   updated_at: string; // ISO string
   last_activity_at?: string; // ISO string of most recent activity
+  last_contact_at?: string; // ISO string of most recent contact
   last_communication_at?: string; // ISO string of most recent communication
   // Phase R: Advanced Tagging
   tags?: string[];
@@ -581,6 +584,7 @@ export interface LeadActivityRecord {
   client_id?: string; // Belongs to Client (if client activity)
   client_name?: string;
   company_name?: string;
+  contact_person?: string;
   entity_type?: 'lead' | 'client';
   activity_type: ActivityType;
   outcome?: string; // e.g. 'Connected', 'Message Sent', 'Quotation Accepted'
@@ -882,6 +886,7 @@ export interface CreateActivityInput {
   client_id?: string;
   client_name?: string;
   company_name?: string;
+  contact_person?: string;
   activity_type: ActivityType;
   description: string;
   outcome?: string;
@@ -902,7 +907,9 @@ export interface CreateActivityInput {
 }
 
 export interface CreateFollowUpInput {
-  lead_id: string;
+  lead_id?: string;
+  client_id?: string;
+  entity_type?: 'Lead' | 'Client';
   action: string;
   scheduled_at: string;
   notes?: string;
@@ -919,14 +926,13 @@ export interface CreateFollowUpInput {
   title?: string;
   end_time?: string;
   location?: string;
-  client_id?: string;
-  entity_type?: 'Lead' | 'Client';
 }
 
-export type UpdateFollowUpInput = Partial<Omit<FollowUpRecord, 'id' | 'lead_id' | 'created_by' | 'created_at' | 'updated_at'>>;
+export type UpdateFollowUpInput = Partial<Omit<FollowUpRecord, 'id' | 'created_by' | 'created_at' | 'updated_at'>>;
 
 export interface CompleteFollowUpInput {
-  lead_id: string;
+  lead_id?: string;
+  client_id?: string;
   followup_id: string;
   outcome: string;
   notes?: string;
@@ -940,7 +946,8 @@ export interface CompleteFollowUpInput {
 }
 
 export interface RescheduleFollowUpInput {
-  lead_id: string;
+  lead_id?: string;
+  client_id?: string;
   followup_id: string;
   new_scheduled_at: string;
   new_action?: string;
@@ -952,7 +959,8 @@ export interface RescheduleFollowUpInput {
 }
 
 export interface CancelFollowUpInput {
-  lead_id: string;
+  lead_id?: string;
+  client_id?: string;
   followup_id: string;
   cancellation_reason?: string;
   performer_id?: string;

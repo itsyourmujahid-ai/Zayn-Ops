@@ -158,25 +158,26 @@ export const CreateOpportunityModal: React.FC<CreateOpportunityModalProps> = ({
       // Create new lead document
       const newLead = await createLead(leadPayload, userProfile?.role);
 
-      // Log relationship activity on the source lead/client context
-      if (client.source_lead_id) {
-        try {
-          await createActivity({
-            lead_id: client.source_lead_id,
-            activity_type: 'Other',
-            description: `New Repeat Opportunity: "${projectName.trim()}"`,
-            outcome: 'Opportunity Created',
-            notes: `Created new repeat pipeline deal "${projectName.trim()}" (Lead ID: ${newLead.id}) assigned to ${getUserDisplayName(assignedSalesmanId)}.`,
-            metadata: {
-              new_lead_id: newLead.id,
-              source_client_id: client.id,
-              estimated_value: parsedValue,
-              company_name: client.company_name,
-            },
-          });
-        } catch (actErr) {
-          console.warn('Activity log notice for repeat opportunity:', actErr);
-        }
+      // Log relationship activity on the client timeline
+      try {
+        await createActivity({
+          client_id: client.id,
+          lead_id: client.source_lead_id || undefined,
+          company_name: client.company_name,
+          client_name: client.company_name,
+          activity_type: 'Other',
+          description: `New Repeat Opportunity: "${projectName.trim()}"`,
+          outcome: 'Opportunity Created',
+          notes: `Created new repeat pipeline deal "${projectName.trim()}" (Lead ID: ${newLead.id}) assigned to ${getUserDisplayName(assignedSalesmanId)}.`,
+          metadata: {
+            new_lead_id: newLead.id,
+            source_client_id: client.id,
+            estimated_value: parsedValue,
+            company_name: client.company_name,
+          },
+        });
+      } catch (actErr) {
+        console.warn('Activity log notice for repeat opportunity:', actErr);
       }
 
       // Schedule optional initial follow-up on the newly created lead
