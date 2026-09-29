@@ -33,6 +33,14 @@ import {
   CheckSquare,
   GitMerge,
   AlertTriangle,
+  Globe,
+  Paperclip,
+  Activity,
+  Layers,
+  Save,
+  PauseCircle,
+  Trash2,
+  X,
 } from 'lucide-react';
 import {
   ClientRecord,
@@ -41,12 +49,13 @@ import {
   LeadRecord,
   LeadActivityRecord,
   FollowUpRecord,
-  CreateActivityInput,
   FollowUpActionType,
   CompleteFollowUpInput,
   RescheduleFollowUpInput,
   DuplicateMatchCandidate,
   ClientTransferRecord,
+  AttachmentRecord,
+  AttachmentCategory,
 } from '../types/database';
 import {
   subscribeToSingleClient,
@@ -55,7 +64,6 @@ import {
   getUserDisplayName,
   updateClient,
   getLeadById,
-  subscribeToActivities,
   subscribeToClientTimeline,
   createActivity,
   subscribeToFollowUps,
@@ -70,7 +78,10 @@ import {
   getLocalNotDuplicates,
   markAsNotDuplicate,
   subscribeToClientTransfers,
-  normalizePhone,
+  subscribeToClientAttachments,
+  uploadClientAttachment,
+  deleteClientAttachment,
+  deleteClient,
 } from '../lib/dal';
 import { findPotentialMatchesForClientInput } from '../lib/dataQuality';
 import { RecordMergeModal } from '../components/data-quality/RecordMergeModal';
@@ -80,8 +91,11 @@ import { useAuth } from '../context/AuthContext';
 import { EditClientModal } from '../components/clients/EditClientModal';
 import { TransferClientModal } from '../components/clients/TransferClientModal';
 import { CreateOpportunityModal } from '../components/clients/CreateOpportunityModal';
-import { CommunicationCenter } from '../components/lead-details/CommunicationCenter';
-import { ActivityTimeline } from '../components/lead-details/ActivityTimeline';
+import { AddClientActivityModal } from '../components/clients/AddClientActivityModal';
+import { ClientActivityTimeline } from '../components/clients/ClientActivityTimeline';
+import { ClientRelatedLeads } from '../components/clients/ClientRelatedLeads';
+import { ClientFollowUps } from '../components/clients/ClientFollowUps';
+import { ClientAttachmentsSection } from '../components/clients/ClientAttachmentsSection';
 import { ScheduleFollowUpModal } from '../components/followups/ScheduleFollowUpModal';
 import { CompleteFollowUpModal } from '../components/followups/CompleteFollowUpModal';
 import { RescheduleFollowUpModal } from '../components/followups/RescheduleFollowUpModal';
@@ -92,7 +106,7 @@ interface ClientDetailsPageProps {
   onNavigateToLead: (leadId: string) => void;
 }
 
-type ClientTab = 'communication' | 'timeline' | 'followups' | 'opportunities' | 'transfers' | 'profile';
+type ClientTab = 'overview' | 'activity' | 'opportunities' | 'followups' | 'attachments' | 'transfers';
 
 export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
   clientId,
@@ -106,32 +120,53 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
   const [allLeads, setAllLeads] = useState<LeadRecord[]>([]);
   const [activities, setActivities] = useState<LeadActivityRecord[]>([]);
   const [followups, setFollowups] = useState<FollowUpRecord[]>([]);
+  const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
   const [usersList, setUsersList] = useState<UserProfile[]>([]);
   const [clientTransfers, setClientTransfers] = useState<ClientTransferRecord[]>([]);
 
-  const canTransfer = !isSuperAdmin && (isAdmin || hasPermission('CLIENTS_TRANSFER') || client?.owner_id === (userProfile?.id || currentUser?.uid));
+  const canTransfer =
+    !isSuperAdmin &&
+    (isAdmin ||
+      hasPermission('CLIENTS_TRANSFER') ||
+      client?.owner_id === (userProfile?.id || currentUser?.uid));
+
+  // Client Deletion: ADMIN only or explicit CLIENTS_DELETE
+  const canDeleteClient = !isSuperAdmin && (isAdmin || hasPermission('CLIENTS_DELETE'));
 
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingActivities, setLoadingActivities] = useState<boolean>(true);
+  const [loadingAttachments, setLoadingAttachments] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Active tab
-  const [activeTab, setActiveTab] = useState<ClientTab>('communication');
+  // Deletion state
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
+  const [deleteReason, setDeleteReason] = useState<string>('');
+  const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Active tab (Default: Overview)
+  const [activeTab, setActiveTab] = useState<ClientTab>('overview');
+
+  // Quick notes editing
+  const [quickNotes, setQuickNotes] = useState<string>('');
+  const [isSavingNotes, setIsSavingNotes] = useState<boolean>(false);
+  const [notesSavedSuccess, setNotesSavedSuccess] = useState<boolean>(false);
 
   // Modals
   const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState<boolean>(false);
   const [isCreateOpportunityOpen, setIsCreateOpportunityOpen] = useState<boolean>(false);
+  const [isAddActivityOpen, setIsAddActivityOpen] = useState<boolean>(false);
+  const [activityInitialType, setActivityInitialType] = useState<any>('Call');
   const [isScheduleFollowUpOpen, setIsScheduleFollowUpOpen] = useState<boolean>(false);
-  const [scheduleFollowUpAction, setScheduleFollowUpAction] = useState<FollowUpActionType>('Customer Check-in');
+  const [scheduleFollowUpAction, setScheduleFollowUpAction] = useState<FollowUpActionType>('Call');
   const [isTagModalOpen, setIsTagModalOpen] = useState<boolean>(false);
-  
+
   const [selectedFollowUpForComplete, setSelectedFollowUpForComplete] = useState<FollowUpRecord | null>(null);
   const [selectedFollowUpForReschedule, setSelectedFollowUpForReschedule] = useState<FollowUpRecord | null>(null);
 
-  const [statusUpdating, setStatusUpdating] = useState<boolean>(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [followUpFilter, setFollowUpFilter] = useState<'all' | 'pending' | 'completed' | 'cancelled'>('all');
 
   // Phase S: Client duplicate candidate tracking
   const [duplicateMatches, setDuplicateMatches] = useState<DuplicateMatchCandidate[]>([]);
@@ -144,7 +179,7 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
       .catch((e) => console.warn('Failed to load users for client details:', e));
   }, []);
 
-  // Check for potential duplicate clients in real-time
+  // Check for potential duplicate clients
   useEffect(() => {
     if (!client || client.record_status === 'merged') {
       setDuplicateMatches([]);
@@ -163,7 +198,7 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
     };
   }, [client?.id, client?.company_name, client?.phone, client?.email, client?.whatsapp, client?.record_status]);
 
-  // Subscribe to all leads (for repeat business identification & schedule modal)
+  // Subscribe to all leads
   useEffect(() => {
     const unsub = subscribeToLeads(
       (leads) => setAllLeads(leads),
@@ -177,19 +212,18 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
     setLoading(true);
     setError(null);
 
-    const currentUserId = userProfile?.id || currentUser?.uid;
-
     const unsub = subscribeToSingleClient(
       clientId,
       (clientData) => {
         if (clientData) {
           setClient(clientData);
+          setQuickNotes(clientData.notes || '');
           setError(null);
         } else {
-          // Check local cache fallback
           const localMatch = getLocalClients().find((c) => c.id === clientId);
           if (localMatch) {
             setClient(localMatch);
+            setQuickNotes(localMatch.notes || '');
             setError(null);
           } else {
             setClient(null);
@@ -198,7 +232,6 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
         }
         setLoading(false);
 
-        // Fetch source lead if available
         if (clientData?.source_lead_id) {
           getLeadById(clientData.source_lead_id, userProfile?.role)
             .then((lead) => {
@@ -214,130 +247,108 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
         const localMatch = getLocalClients().find((c) => c.id === clientId);
         if (localMatch) {
           setClient(localMatch);
+          setQuickNotes(localMatch.notes || '');
           setError(null);
         } else {
           setError('Client not found or you do not have permission to view this customer.');
         }
         setLoading(false);
-      },
-      userProfile?.role,
-      currentUserId
-    );
-
-    return () => unsub();
-  }, [clientId, userProfile?.role, userProfile?.id, currentUser?.uid]);
-
-  // Check access permissions
-  const hasAccess = useMemo(() => {
-    if (isAdmin) return true;
-    if (!client) return false;
-    const currentId = userProfile?.id || currentUser?.uid;
-    return client.owner_id === currentId;
-  }, [isAdmin, client, userProfile?.id, currentUser?.uid]);
-
-  // All Related Leads (source converted lead, linked won leads, repeat opportunities)
-  const relatedLeads = useMemo(() => {
-    if (!client) return [];
-    const clientPhone = normalizePhone(client.phone);
-    return allLeads.filter((l) => {
-      if (l.record_status === 'deleted') return false;
-      if (l.client_id === client.id) return true;
-      if (l.source_client_id === client.id) return true;
-      if (l.converted_to_client_id === client.id) return true;
-      if (client.source_lead_id && l.id === client.source_lead_id) return true;
-      if (client.related_lead_ids && client.related_lead_ids.includes(l.id)) return true;
-      if (clientPhone && l.normalized_phone && l.normalized_phone === clientPhone) return true;
-      return false;
-    });
-  }, [allLeads, client]);
-
-  // Subscribe to Unified Client Activity Timeline (direct activities + source converted lead + repeat opportunities)
-  useEffect(() => {
-    if (!client?.id) {
-      setLoadingActivities(false);
-      return;
-    }
-
-    setLoadingActivities(true);
-    const relatedIds = Array.from(
-      new Set([
-        ...(client.related_lead_ids || []),
-        ...(client.source_lead_id ? [client.source_lead_id] : []),
-        ...relatedLeads.map((l) => l.id),
-      ])
-    );
-
-    const unsub = subscribeToClientTimeline(
-      client.id,
-      relatedIds,
-      (acts) => {
-        setActivities(acts);
-        setLoadingActivities(false);
-      },
-      (err) => {
-        console.warn('Could not subscribe to client activities:', err);
-        setLoadingActivities(false);
       }
     );
 
     return () => unsub();
-  }, [client?.id, client?.source_lead_id, client?.related_lead_ids, relatedLeads]);
+  }, [clientId, userProfile?.role]);
 
-  // Subscribe to follow-ups for this client
+  // Subscribe to client timeline activities
   useEffect(() => {
-    if (!client?.id) return;
-    const targetLeadId = client.source_lead_id || client.id;
+    setLoadingActivities(true);
+    const relatedIds = Array.from(
+      new Set([
+        ...(client?.related_lead_ids || []),
+        ...(client?.source_lead_id ? [client.source_lead_id] : []),
+      ])
+    );
+    const unsub = subscribeToClientTimeline(
+      clientId,
+      relatedIds,
+      (activityList) => {
+        setActivities(activityList);
+        setLoadingActivities(false);
+      },
+      (err) => {
+        console.warn('Client timeline subscription warning:', err);
+        setLoadingActivities(false);
+      }
+    );
+    return () => unsub();
+  }, [clientId, client?.related_lead_ids, client?.source_lead_id]);
 
+  // Subscribe to follow-ups
+  useEffect(() => {
     const unsub = subscribeToFollowUps(
-      (allFollowups) => {
-        // Filter follow-ups belonging to the client id, source lead, or bearing the client's company name
-        const clientFollowUps = allFollowups.filter(
+      (list) => {
+        const matching = list.filter(
           (f) =>
-            f.client_id === client.id ||
-            (f.lead_id && (f.lead_id === targetLeadId || f.lead_id === client.id || (client.source_lead_id && f.lead_id === client.source_lead_id))) ||
-            (f.company_name && client.company_name && f.company_name.toLowerCase() === client.company_name.toLowerCase())
+            f.client_id === clientId ||
+            f.lead_id === clientId ||
+            (client?.source_lead_id && f.lead_id === client.source_lead_id) ||
+            (client?.related_lead_ids && client.related_lead_ids.includes(f.lead_id))
         );
-        setFollowups(clientFollowUps);
+        setFollowups(matching);
       },
       userProfile?.role
     );
-
     return () => unsub();
-  }, [client?.id, client?.source_lead_id, client?.company_name, userProfile?.role]);
+  }, [clientId, client?.source_lead_id, client?.related_lead_ids, userProfile?.role]);
 
-  // Subscribe to client ownership transfers
+  // Subscribe to client attachments
   useEffect(() => {
-    if (!clientId) return;
-    const unsub = subscribeToClientTransfers((records) => {
-      setClientTransfers(records);
-    }, clientId);
+    setLoadingAttachments(true);
+    const unsub = subscribeToClientAttachments(
+      clientId,
+      (list) => {
+        setAttachments(list);
+        setLoadingAttachments(false);
+      },
+      (err) => {
+        console.warn('Client attachments subscription warning:', err);
+        setLoadingAttachments(false);
+      }
+    );
     return () => unsub();
   }, [clientId]);
 
-  // Repeat Opportunities derived from leads where source_client_id === client.id
-  const repeatOpportunities = useMemo(() => {
+  // Subscribe to client transfers
+  useEffect(() => {
+    const unsub = subscribeToClientTransfers(
+      (transfers) => setClientTransfers(transfers),
+      clientId
+    );
+    return () => unsub();
+  }, [clientId]);
+
+  // Derived related leads
+  const relatedLeads = useMemo(() => {
     if (!client) return [];
-    return allLeads.filter((l) => l.source_client_id === client.id);
+    return allLeads.filter(
+      (l) =>
+        l.client_id === client.id ||
+        l.id === client.source_lead_id ||
+        (client.related_lead_ids && client.related_lead_ids.includes(l.id)) ||
+        (l.company_name && l.company_name.toLowerCase() === client.company_name.toLowerCase())
+    );
   }, [allLeads, client]);
 
-  // Summary Metrics
-  const metrics = useMemo(() => {
-    const totalActivities = activities.length;
-    const pendingFollowUps = followups.filter((f) => f.status === 'pending');
-    const completedFollowUps = followups.filter((f) => f.status === 'completed');
+  // Metrics computation for Relationship Summary
+  const relationshipSummary = useMemo(() => {
+    const totalLeads = relatedLeads.length;
+    const wonLeads = relatedLeads.filter((l) => l.status === 'Won');
+    const wonValue = wonLeads.reduce((acc, l) => acc + (l.deal_value || 0), 0);
+    const openOpportunities = relatedLeads.filter(
+      (l) => l.status !== 'Won' && l.status !== 'Lost'
+    ).length;
 
-    // Nearest pending follow-up
-    const sortedPending = [...pendingFollowUps].sort(
-      (a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
-    );
-    const nextFollowUp = sortedPending[0] || null;
-
-    // Check if next follow-up is overdue
-    const isOverdue = nextFollowUp
-      ? new Date(nextFollowUp.scheduled_at).getTime() < Date.now()
-      : false;
-
-    // Latest communication activity (Call, WhatsApp, Email, Meeting, Site Visit)
+    // Last contact (Call, WhatsApp, Email, Meeting, Site Visit)
     const contactTypes = ['Call', 'WhatsApp', 'Email', 'Meeting', 'Site Visit'];
     const contactActs = activities
       .filter((a) => contactTypes.includes(a.activity_type) && !a.is_system_activity)
@@ -348,95 +359,97 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
       });
     const lastContact = contactActs[0] || null;
 
+    // Next follow-up
+    const pendingFu = followups
+      .filter((f) => f.status === 'pending')
+      .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+    const nextFollowUp = pendingFu[0] || null;
+    const isOverdue = nextFollowUp
+      ? new Date(nextFollowUp.scheduled_at).getTime() < Date.now()
+      : false;
+
     return {
-      totalActivities,
-      totalFollowups: followups.length,
-      pendingCount: pendingFollowUps.length,
-      completedCount: completedFollowUps.length,
+      totalLeads,
+      wonCount: wonLeads.length,
+      wonValue,
+      openOpportunities,
+      lastContact,
       nextFollowUp,
       isOverdue,
-      lastContact,
     };
-  }, [activities, followups]);
+  }, [relatedLeads, activities, followups]);
 
-  // Filtered follow-ups list
-  const filteredFollowUps = useMemo(() => {
-    if (followUpFilter === 'all') return followups;
-    return followups.filter((f) => f.status === followUpFilter);
-  }, [followups, followUpFilter]);
+  // RBAC Access Check
+  const hasAccess = useMemo(() => {
+    if (!client) return false;
+    if (isAdmin || isSuperAdmin) return true;
+    const userId = userProfile?.id || currentUser?.uid;
+    return client.owner_id === userId || client.created_by === userId;
+  }, [client, isAdmin, isSuperAdmin, userProfile?.id, currentUser?.uid]);
 
-  const handleCopy = (text: string, fieldName: string) => {
+  const copyToClipboard = (text: string, fieldName: string) => {
+    if (!text) return;
     navigator.clipboard.writeText(text);
     setCopiedField(fieldName);
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const handleToggleStatus = async (newStatus: ClientStatus) => {
-    if (!client || client.status === newStatus || statusUpdating) return;
+  const handleStatusChange = async (newStatus: ClientStatus) => {
+    if (!client) return;
     try {
-      setStatusUpdating(true);
       await updateClient(client.id, { status: newStatus }, client);
-    } catch (err: any) {
-      console.error('Failed to change client status:', err);
-    } finally {
-      setStatusUpdating(false);
+      setClient((prev) => (prev ? { ...prev, status: newStatus } : null));
+
+      // Record system activity
+      await createActivity({
+        client_id: client.id,
+        company_name: client.company_name,
+        client_name: client.contact_person || client.company_name,
+        activity_type: 'Note',
+        description: `Client status changed to ${newStatus}`,
+        outcome: newStatus,
+        performed_by: userProfile?.id || currentUser?.uid || '',
+        performed_by_name: userProfile?.full_name || 'Team Member',
+        is_system_activity: true,
+      });
+    } catch (err) {
+      console.error('Failed to change status:', err);
     }
   };
 
-  // Tag handlers
-  const handleSelectTag = async (tagName: string) => {
+  const handleSaveQuickNotes = async () => {
+    if (!client) return;
+    try {
+      setIsSavingNotes(true);
+      await updateClient(client.id, { notes: quickNotes.trim() }, client);
+      setNotesSavedSuccess(true);
+      setTimeout(() => setNotesSavedSuccess(false), 2000);
+    } catch (err) {
+      console.error('Failed to save quick notes:', err);
+    } finally {
+      setIsSavingNotes(false);
+    }
+  };
+
+  const handleAddTag = async (tagName: string) => {
     if (!client) return;
     await addTagToClient(client.id, tagName);
-    setClient((prev) => (prev ? { ...prev, tags: [...(prev.tags || []), tagName] } : null));
+    setClient((prev) =>
+      prev ? { ...prev, tags: [...(prev.tags || []), tagName] } : null
+    );
   };
 
   const handleRemoveTag = async (tagName: string) => {
     if (!client) return;
     await removeTagFromClient(client.id, tagName);
     setClient((prev) =>
-      prev ? { ...prev, tags: (prev.tags || []).filter((t) => t.toLowerCase() !== tagName.toLowerCase()) } : null
+      prev
+        ? { ...prev, tags: (prev.tags || []).filter((t) => t !== tagName) }
+        : null
     );
   };
 
-  // Activity logging handler
-  const handleLogActivity = async (input: CreateActivityInput) => {
-    if (!client) return;
-    await createActivity({
-      ...input,
-      client_id: client.id,
-      lead_id: undefined,
-      company_name: client.company_name,
-      client_name: client.company_name,
-      metadata: {
-        ...input.metadata,
-        client_id: client.id,
-        company_name: client.company_name,
-      },
-    });
-  };
-
-  // Schedule follow-up handler
-  const handleScheduleFollowUp = async (data: {
-    client_id?: string;
-    lead_id?: string;
-    action: FollowUpActionType;
-    scheduled_at: string;
-    assigned_to: string;
-    notes?: string;
-  }) => {
-    if (!client) return;
-    await createFollowUp({
-      client_id: client.id,
-      entity_type: 'Client',
-      action: data.action,
-      scheduled_at: data.scheduled_at,
-      assigned_to: data.assigned_to,
-      notes: data.notes,
-      company_name: client?.company_name,
-      status: 'pending',
-    });
-  };
-
+  // Follow-up actions
   const handleCompleteFollowUp = async (input: CompleteFollowUpInput) => {
     await completeFollowUp({
       ...input,
@@ -454,40 +467,116 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
   };
 
   const handleCancelFollowUp = async (followUp: FollowUpRecord) => {
-    if (!window.confirm(`Are you sure you want to cancel the scheduled "${followUp.action}"?`)) {
+    if (!window.confirm(`Are you sure you want to cancel "${followUp.action}"?`)) {
       return;
     }
     await cancelFollowUp({
       lead_id: followUp.lead_id,
       client_id: followUp.client_id || client?.id,
       followup_id: followUp.id,
-      cancellation_reason: 'Cancelled from Client Relationship Dashboard',
+      cancellation_reason: 'Cancelled from Client workspace',
     });
   };
 
-  const handleOpenScheduleFollowUp = (initialAction?: string) => {
-    if (initialAction) {
-      setScheduleFollowUpAction(initialAction as FollowUpActionType);
-    } else {
-      setScheduleFollowUpAction('Customer Check-in');
+  // Attachments upload & delete
+  const handleUploadAttachment = async (
+    file: File,
+    category: AttachmentCategory,
+    description: string,
+    onProgress: (p: number) => void
+  ) => {
+    if (!client) return;
+    await uploadClientAttachment(
+      {
+        client_id: client.id,
+        file,
+        category,
+        description,
+        onProgress,
+      },
+      userProfile?.role
+    );
+  };
+
+  const handleDeleteAttachment = async (attachment: AttachmentRecord) => {
+    if (!client) return;
+    await deleteClientAttachment(client.id, attachment, userProfile?.role);
+  };
+
+  // Quick action helpers
+  const handleQuickCall = () => {
+    if (!client) return;
+    if (client.phone) {
+      window.location.href = `tel:${client.phone}`;
     }
+    setActivityInitialType('Call');
+    setIsAddActivityOpen(true);
+  };
+
+  const handleQuickWhatsApp = () => {
+    if (!client) return;
+    const num = (client.whatsapp || client.phone || '').replace(/[^0-9]/g, '');
+    if (num) {
+      window.open(`https://wa.me/${num}`, '_blank');
+    }
+    setActivityInitialType('WhatsApp');
+    setIsAddActivityOpen(true);
+  };
+
+  const handleQuickEmail = () => {
+    if (!client) return;
+    if (client.email) {
+      window.location.href = `mailto:${client.email}`;
+    }
+    setActivityInitialType('Email');
+    setIsAddActivityOpen(true);
+  };
+
+  const handleOpenScheduleModal = (actionType: FollowUpActionType = 'Call') => {
+    setScheduleFollowUpAction(actionType);
     setIsScheduleFollowUpOpen(true);
   };
 
-  const formatTimestamp = (isoString?: string) => {
-    if (!isoString) return 'N/A';
+  // Handle Client Deletion with strict RBAC and compliance audit
+  const handleConfirmDelete = async () => {
+    if (!client) return;
+    if (deleteConfirmText.trim() !== 'DELETE') {
+      setDeleteError('Please type DELETE to confirm removal.');
+      return;
+    }
+    if (!deleteReason.trim()) {
+      setDeleteError('Please specify a deletion reason for compliance audit.');
+      return;
+    }
     try {
-      const date = new Date(isoString);
-      if (isNaN(date.getTime())) return 'N/A';
-      return date.toLocaleDateString([], {
-        day: '2-digit',
+      setIsDeleting(true);
+      setDeleteError(null);
+      await deleteClient(client.id, deleteReason.trim(), {
+        id: userProfile?.id || currentUser?.uid || 'user',
+        name: userProfile?.full_name || currentUser?.displayName || 'User',
+        role: userProfile?.role || (isAdmin ? 'ADMIN' : 'SALESMAN'),
+        company_id: userProfile?.company_id,
+      });
+      setIsDeleteModalOpen(false);
+      onBack();
+    } catch (err: any) {
+      setDeleteError(err?.message || 'Failed to delete client.');
+      setIsDeleting(false);
+    }
+  };
+
+  const formatDateString = (isoString?: string) => {
+    if (!isoString) return 'None';
+    try {
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return 'None';
+      return d.toLocaleDateString([], {
+        day: 'numeric',
         month: 'short',
         year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
       });
     } catch {
-      return 'N/A';
+      return 'None';
     }
   };
 
@@ -495,7 +584,7 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
     return (
       <div className="flex flex-col items-center justify-center py-24">
         <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
-        <p className="mt-3 text-xs font-semibold text-slate-500">Loading client relationship account...</p>
+        <p className="mt-3 text-xs font-semibold text-slate-500">Loading client workspace...</p>
       </div>
     );
   }
@@ -504,7 +593,7 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
     return (
       <div className="rounded-2xl border border-rose-200 bg-rose-50 p-8 text-center max-w-lg mx-auto mt-12">
         <AlertCircle className="h-10 w-10 text-rose-600 mx-auto mb-3" />
-        <h3 className="text-base font-bold text-rose-900">Access Notice</h3>
+        <h3 className="text-base font-bold text-rose-900">Client Not Found</h3>
         <p className="text-xs text-rose-700 mt-1 mb-5">
           {error || 'The requested customer account could not be accessed.'}
         </p>
@@ -540,18 +629,13 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
     );
   }
 
-  const assignedSalesmanName =
+  const assignedOwnerName =
     client.owner_name || getUserDisplayName(client.owner_id, usersList);
-  const isActive = client.status === 'Active';
-
-  // Quick action cleaner strings
-  const cleanPhone = (client.phone || client.whatsapp || '').replace(/[^0-9+]/g, '');
-  const cleanWhatsapp = (client.whatsapp || client.phone || '').replace(/[^0-9]/g, '');
 
   return (
-    <div className="space-y-6 pb-16 animate-in fade-in duration-200">
-      {/* ---------------- Top Navigation & Primary Actions Bar ---------------- */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-5 pb-16">
+      {/* ---------------- Top Back Button & Header ---------------- */}
+      <div className="flex items-center justify-between gap-3">
         <button
           type="button"
           onClick={onBack}
@@ -561,11 +645,10 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
           <span>Back to Clients</span>
         </button>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Create New Opportunity (Repeat Business) Button */}
+        <div className="flex items-center gap-2">
+          {/* Create Opportunity button */}
           <button
             type="button"
-            id="client-create-opportunity-btn"
             onClick={() => setIsCreateOpportunityOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-800 transition cursor-pointer"
           >
@@ -573,1287 +656,713 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
             <span>New Opportunity</span>
           </button>
 
-          {/* Schedule Meeting Button */}
-          <button
-            type="button"
-            id="client-schedule-meeting-btn"
-            onClick={() => handleOpenScheduleFollowUp('Meeting')}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 shadow-2xs hover:bg-indigo-100 transition cursor-pointer"
-          >
-            <Calendar className="h-3.5 w-3.5 text-indigo-600" />
-            <span>Meeting</span>
-          </button>
-
-          {/* Schedule Site Visit Button */}
-          <button
-            type="button"
-            id="client-schedule-visit-btn"
-            onClick={() => handleOpenScheduleFollowUp('Site Visit')}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 shadow-2xs hover:bg-emerald-100 transition cursor-pointer"
-          >
-            <MapPin className="h-3.5 w-3.5 text-emerald-600" />
-            <span>Site Visit</span>
-          </button>
-
-          {/* Schedule Follow-up Button */}
-          <button
-            type="button"
-            id="client-schedule-followup-btn"
-            onClick={() => handleOpenScheduleFollowUp('Customer Check-in')}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 transition cursor-pointer"
-          >
-            <CalendarPlus className="h-3.5 w-3.5" />
-            <span>Schedule Follow-up</span>
-          </button>
-
-          {/* Transfer Ownership */}
-          {canTransfer && (
-            <button
-              type="button"
-              id="client-transfer-ownership-btn"
-              onClick={() => setIsTransferModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition cursor-pointer"
-            >
-              <UserCheck className="h-3.5 w-3.5 text-indigo-600" />
-              <span>Transfer Client</span>
-            </button>
-          )}
-
-          {/* Edit Client Button */}
+          {/* Edit Client */}
           <button
             type="button"
             onClick={() => setIsEditModalOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition cursor-pointer"
           >
-            <Edit3 className="h-3.5 w-3.5 text-slate-600" />
+            <Edit3 className="h-3.5 w-3.5 text-slate-500" />
             <span>Edit Account</span>
           </button>
+
+          {/* Delete Client (Secondary Destructive Action, Admin Only) */}
+          {canDeleteClient && (
+            <button
+              type="button"
+              id="admin-header-delete-client-btn"
+              onClick={() => {
+                setDeleteReason('');
+                setDeleteConfirmText('');
+                setDeleteError(null);
+                setIsDeleteModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 shadow-2xs hover:bg-rose-100 hover:border-rose-300 transition cursor-pointer"
+              title="Delete Client Account (Admin Only)"
+            >
+              <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+              <span>Delete Client</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Phase S: Merged Status Notice */}
+      {/* Merged Banner if applicable */}
       {client.record_status === 'merged' && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-xs text-amber-900 flex items-start gap-3 shadow-2xs">
           <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <div className="font-bold text-amber-950 text-sm">
-              Archived Account (Merged)
-            </div>
-            <p className="text-amber-800">
-              This client record was merged into master account <strong>{client.merged_into_id}</strong> on{' '}
-              {client.merged_at ? new Date(client.merged_at).toLocaleDateString() : 'recent date'}.
-              All communication activities and follow-ups have been linked to the master customer.
+          <div>
+            <div className="font-bold text-amber-950 text-sm">Archived Account (Merged)</div>
+            <p className="text-amber-800 mt-0.5">
+              This client record was merged into master account <strong>{client.merged_into_id}</strong>.
             </p>
           </div>
         </div>
       )}
 
-      {/* Phase S: Potential Duplicate Warning Banner */}
+      {/* Duplicate Alert Banner if applicable */}
       {duplicateMatches.length > 0 && client.record_status !== 'merged' && (
-        <div
-          id="client-duplicate-alert"
-          className="rounded-xl border border-amber-300 bg-amber-50/90 p-4 shadow-2xs space-y-3"
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-              <GitMerge className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <div className="font-bold text-amber-950 text-sm flex items-center gap-2">
-                  <span>Possible Duplicate Client Account Detected</span>
-                  <span className="bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full text-[11px] font-semibold">
-                    {duplicateMatches[0].confidence_score}% Match
-                  </span>
-                </div>
-                <p className="text-xs text-amber-800 mt-1">
-                  Existing client <strong>{duplicateMatches[0].record_b.company_name}</strong> shares matching contact details ({duplicateMatches[0].match_reasons.join(', ')}).
-                </p>
+        <div className="rounded-xl border border-amber-300 bg-amber-50/90 p-4 shadow-2xs flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-start gap-2.5">
+            <GitMerge className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-bold text-amber-950 text-sm">
+                Possible Duplicate Client Account Detected ({duplicateMatches[0].confidence_score}% match)
               </div>
+              <p className="text-xs text-amber-800 mt-0.5">
+                Existing client <strong>{duplicateMatches[0].record_b.company_name}</strong> shares matching contact details.
+              </p>
             </div>
-
-            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-              {isAdmin && (
-                <button
-                  type="button"
-                  id="open-merge-from-client-btn"
-                  onClick={() => setActiveMergeCandidate(duplicateMatches[0])}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-indigo-700 transition cursor-pointer"
-                >
-                  <GitMerge className="w-3.5 h-3.5" />
-                  <span>Review & Merge</span>
-                </button>
-              )}
+          </div>
+          <div className="flex items-center gap-2">
+            {isAdmin && (
               <button
                 type="button"
-                id="dismiss-duplicate-from-client-btn"
-                onClick={async () => {
-                  await markAsNotDuplicate(client.id, duplicateMatches[0].record_b.id, 'Client');
-                  setDuplicateMatches((prev) => prev.filter((_, idx) => idx !== 0));
-                }}
-                className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 transition cursor-pointer"
+                onClick={() => setActiveMergeCandidate(duplicateMatches[0])}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition cursor-pointer"
               >
-                Not Duplicate
+                <GitMerge className="w-3.5 h-3.5" />
+                <span>Review &amp; Merge</span>
               </button>
-            </div>
+            )}
+            <button
+              type="button"
+              onClick={async () => {
+                await markAsNotDuplicate(client.id, duplicateMatches[0].record_b.id, 'Client');
+                setDuplicateMatches((prev) => prev.filter((_, idx) => idx !== 0));
+              }}
+              className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 transition cursor-pointer"
+            >
+              Not Duplicate
+            </button>
           </div>
         </div>
       )}
 
-      {/* ---------------- Main Customer Header Banner ---------------- */}
+      {/* ---------------- 4A. CLIENT HEADER ---------------- */}
       <div className="rounded-2xl border border-slate-200/90 bg-white p-5 sm:p-6 shadow-xs">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-          {/* Left Column: Client Identity */}
-          <div className="space-y-2">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
+          {/* Identity & Contact Details */}
+          <div className="space-y-3 max-w-2xl">
+            {/* Status & Category & Owner row */}
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-800 border border-emerald-100 uppercase tracking-wider">
-                <Tag className="h-3 w-3" />
-                {client.client_type || 'B2B Commercial'}
-              </span>
+              {/* Status Picker Pill (Section 16) */}
+              <div className="relative inline-block">
+                <select
+                  value={client.status || 'Active'}
+                  onChange={(e) => handleStatusChange(e.target.value as ClientStatus)}
+                  className={`inline-flex items-center text-xs font-bold py-1 px-3 rounded-lg border transition cursor-pointer appearance-none pr-7 ${
+                    client.status === 'Active'
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      : client.status === 'Dormant'
+                      ? 'bg-amber-50 text-amber-800 border-amber-300'
+                      : 'bg-slate-100 text-slate-700 border-slate-300'
+                  }`}
+                >
+                  <option value="Active">Active Relationship</option>
+                  <option value="Dormant">Dormant Account</option>
+                  <option value="Inactive">Inactive / Paused</option>
+                </select>
+                <span
+                  className={`absolute right-2.5 top-2.5 h-2 w-2 rounded-full pointer-events-none ${
+                    client.status === 'Active'
+                      ? 'bg-emerald-500'
+                      : client.status === 'Dormant'
+                      ? 'bg-amber-500'
+                      : 'bg-slate-400'
+                  }`}
+                />
+              </div>
 
-              {client.location && (
-                <span className="inline-flex items-center gap-1 text-xs text-slate-500 font-medium">
-                  <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                  {client.location}
+              {/* Account Owner */}
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 text-xs text-slate-700 font-semibold">
+                <User className="h-3.5 w-3.5 text-slate-400" />
+                <span>Owner:</span>
+                <span className="text-slate-900">{assignedOwnerName}</span>
+                {canTransfer && (
+                  <button
+                    type="button"
+                    onClick={() => setIsTransferModalOpen(true)}
+                    className="text-emerald-700 hover:text-emerald-800 hover:underline ml-1 cursor-pointer font-bold text-[11px]"
+                  >
+                    Change
+                  </button>
+                )}
+              </div>
+
+              {client.client_type && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600">
+                  <Tag className="h-3 w-3 text-slate-400" />
+                  <span>{client.client_type}</span>
                 </span>
               )}
-
-              <span className="inline-flex items-center gap-1 text-[11px] font-mono text-slate-400">
-                ID: {client.id.substring(0, 10)}
-              </span>
             </div>
 
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              {client.company_name}
-            </h1>
-
-            {client.contact_person && (
-              <p className="text-xs sm:text-sm font-semibold text-slate-600 flex items-center gap-1.5">
-                <User className="h-4 w-4 text-slate-400" />
-                <span>Primary Contact:</span>
-                <strong className="text-slate-800">{client.contact_person}</strong>
-              </p>
-            )}
-
-            {/* Phase R: Tags */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-1.5" id="client-tags-container">
-              <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
-                <Tag className="h-3 w-3 text-slate-400" />
-                Tags:
-              </span>
-              {Array.isArray(client.tags) && client.tags.length > 0 ? (
-                client.tags.map((tagName) => (
-                  <TagBadge
-                    key={tagName}
-                    name={tagName}
-                    onRemove={() => handleRemoveTag(tagName)}
-                  />
-                ))
-              ) : (
-                <span className="text-[11px] text-slate-400 italic">No tags</span>
+            {/* Company & Client Name */}
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                {client.company_name}
+              </h1>
+              {client.contact_person && (
+                <p className="text-sm font-semibold text-slate-600 mt-1 flex items-center gap-1.5">
+                  <User className="h-4 w-4 text-slate-400" />
+                  <span>Contact Person:</span>
+                  <span className="text-slate-900 font-bold">{client.contact_person}</span>
+                  {client.contact_role && (
+                    <span className="text-slate-400 text-xs font-medium">({client.contact_role})</span>
+                  )}
+                </p>
               )}
-              <button
-                type="button"
-                id="btn-add-tag-to-client"
-                onClick={() => setIsTagModalOpen(true)}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-dashed border-slate-300 hover:border-emerald-400 bg-white text-[11px] font-medium text-emerald-700 hover:bg-emerald-50/50 transition cursor-pointer"
-                title="Add tag to client"
-              >
-                <Plus className="h-3 w-3" />
-                <span>Add Tag</span>
-              </button>
+            </div>
+
+            {/* Contact Info Strip */}
+            <div className="flex flex-wrap items-center gap-y-2 gap-x-4 text-xs text-slate-600 pt-1">
+              {client.phone && (
+                <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200/80">
+                  <Phone className="h-3.5 w-3.5 text-emerald-600" />
+                  <a
+                    href={`tel:${client.phone}`}
+                    className="font-semibold text-slate-800 hover:text-emerald-700 hover:underline"
+                  >
+                    {client.phone}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(client.phone || '', 'phone')}
+                    className="text-slate-400 hover:text-slate-600 ml-1 cursor-pointer"
+                    title="Copy Phone"
+                  >
+                    {copiedField === 'phone' ? (
+                      <Check className="h-3 w-3 text-emerald-600" />
+                    ) : (
+                      <Copy className="h-3 w-3" />
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {client.whatsapp && (
+                <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200/80">
+                  <MessageSquare className="h-3.5 w-3.5 text-teal-600" />
+                  <a
+                    href={`https://wa.me/${client.whatsapp.replace(/[^0-9]/g, '')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-semibold text-slate-800 hover:text-teal-700 hover:underline"
+                  >
+                    {client.whatsapp}
+                  </a>
+                </div>
+              )}
+
+              {client.email && (
+                <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200/80">
+                  <Mail className="h-3.5 w-3.5 text-blue-600" />
+                  <a
+                    href={`mailto:${client.email}`}
+                    className="font-semibold text-slate-800 hover:text-blue-700 hover:underline"
+                  >
+                    {client.email}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(client.email || '', 'email')}
+                    className="text-slate-400 hover:text-slate-600 ml-1 cursor-pointer"
+                    title="Copy Email"
+                  >
+                    {copiedField === 'email' ? (
+                      <Check className="h-3 w-3 text-emerald-600" />
+                    ) : (
+                      <Copy className="h-3 w-3" />
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {client.location && (
+                <div className="flex items-center gap-1 text-slate-600 font-medium">
+                  <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                  <span>{client.location}</span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Right Column: Interactive Account Status & Ownership */}
-          <div className="flex flex-wrap items-center gap-4 bg-slate-50/90 p-4 rounded-xl border border-slate-200/80">
-            {/* Account Status Toggle */}
-            <div className="flex flex-col">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Account Status
-              </label>
-              <div className="relative">
-                <select
-                  disabled={statusUpdating}
-                  value={client.status}
-                  onChange={(e) => handleToggleStatus(e.target.value as ClientStatus)}
-                  className={`rounded-lg border py-1.5 pl-3 pr-8 text-xs font-bold shadow-2xs focus:outline-none cursor-pointer disabled:opacity-50 ${
-                    isActive
-                      ? 'border-emerald-300 bg-emerald-50 text-emerald-800 focus:border-emerald-600'
-                      : 'border-slate-300 bg-slate-100 text-slate-700 focus:border-slate-500'
-                  }`}
-                >
-                  <option value="Active">Active Customer</option>
-                  <option value="Inactive">Inactive / On Hold</option>
-                </select>
-                {statusUpdating && (
-                  <Loader2 className="absolute right-2 top-2 h-3.5 w-3.5 animate-spin text-emerald-600" />
+          {/* ---------------- 6. DIRECT QUICK ACTIONS ---------------- */}
+          <div className="flex flex-col sm:flex-row lg:flex-col items-stretch gap-2 shrink-0 self-stretch sm:self-auto min-w-[200px]">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">
+              Quick Relationship Actions
+            </div>
+
+            <div className="grid grid-cols-3 gap-1.5">
+              {/* Call */}
+              <button
+                type="button"
+                onClick={handleQuickCall}
+                title="Call and log"
+                className="flex flex-col items-center justify-center p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-emerald-300 text-slate-700 transition cursor-pointer"
+              >
+                <Phone className="h-4 w-4 text-emerald-600 mb-1" />
+                <span className="text-[11px] font-bold">Call</span>
+              </button>
+
+              {/* WhatsApp */}
+              <button
+                type="button"
+                onClick={handleQuickWhatsApp}
+                title="WhatsApp message and log"
+                className="flex flex-col items-center justify-center p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-teal-300 text-slate-700 transition cursor-pointer"
+              >
+                <MessageSquare className="h-4 w-4 text-teal-600 mb-1" />
+                <span className="text-[11px] font-bold">WhatsApp</span>
+              </button>
+
+              {/* Email */}
+              <button
+                type="button"
+                onClick={handleQuickEmail}
+                title="Send email and log"
+                className="flex flex-col items-center justify-center p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-blue-300 text-slate-700 transition cursor-pointer"
+              >
+                <Mail className="h-4 w-4 text-blue-600 mb-1" />
+                <span className="text-[11px] font-bold">Email</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-1.5">
+              {/* Add Activity */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActivityInitialType('Call');
+                  setIsAddActivityOpen(true);
+                }}
+                className="zaynops-btn-primary py-2 px-3 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                <span>Add Activity</span>
+              </button>
+
+              {/* Schedule */}
+              <button
+                type="button"
+                onClick={() => handleOpenScheduleModal('Call')}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white py-2 px-3 text-xs font-bold text-slate-800 hover:bg-slate-50 transition cursor-pointer"
+              >
+                <CalendarPlus className="h-3.5 w-3.5 text-slate-600" />
+                <span>Schedule</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ---------------- 4B. WORKSPACE TABS ---------------- */}
+      <div className="border-b border-slate-200">
+        <nav className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-px">
+          {[
+            { key: 'overview', label: 'Overview', icon: Building2 },
+            {
+              key: 'activity',
+              label: 'Activity',
+              icon: Activity,
+              count: activities.length,
+            },
+            {
+              key: 'opportunities',
+              label: 'Leads / Projects',
+              icon: Kanban,
+              count: relatedLeads.length,
+            },
+            {
+              key: 'followups',
+              label: 'Follow-ups',
+              icon: Calendar,
+              count: followups.filter((f) => f.status === 'pending').length,
+            },
+            {
+              key: 'attachments',
+              label: 'Attachments',
+              icon: Paperclip,
+              count: attachments.length,
+            },
+            ...(canTransfer || clientTransfers.length > 0
+              ? [{ key: 'transfers', label: 'Audit & Ownership', icon: History, count: clientTransfers.length }]
+              : []),
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isSelected = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key as ClientTab)}
+                className={`flex items-center gap-2 py-3 px-4 border-b-2 text-xs font-bold whitespace-nowrap transition cursor-pointer ${
+                  isSelected
+                    ? 'border-emerald-700 text-emerald-800'
+                    : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+                }`}
+              >
+                <Icon className={`h-4 w-4 ${isSelected ? 'text-emerald-700' : 'text-slate-400'}`} />
+                <span>{tab.label}</span>
+                {tab.count !== undefined && (
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                      isSelected
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+
+      {/* ---------------- TAB CONTENTS ---------------- */}
+
+      {/* 5. OVERVIEW TAB */}
+      {activeTab === 'overview' && (
+        <div className="space-y-5">
+          {/* Key Metric Highlights Banner */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* Total Won Value */}
+            <div className="rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+                Total Won Revenue
+              </span>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <span className="text-xl font-bold tracking-tight text-slate-900">
+                  OMR {relationshipSummary.wonValue.toLocaleString()}
+                </span>
+                <span className="text-[11px] text-emerald-700 font-bold">
+                  ({relationshipSummary.wonCount} won)
+                </span>
+              </div>
+            </div>
+
+            {/* Open Opportunities */}
+            <div className="rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+                Open Opportunities
+              </span>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <span className="text-xl font-bold tracking-tight text-emerald-700">
+                  {relationshipSummary.openOpportunities}
+                </span>
+                <span className="text-[11px] text-slate-400 font-medium">
+                  of {relationshipSummary.totalLeads} total
+                </span>
+              </div>
+            </div>
+
+            {/* Last Contact */}
+            <div className="rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+                Last Contact
+              </span>
+              <div className="mt-1 truncate">
+                {relationshipSummary.lastContact ? (
+                  <span className="text-sm font-bold text-slate-800">
+                    {formatDateString(
+                      relationshipSummary.lastContact.activity_date ||
+                        relationshipSummary.lastContact.activity_at
+                    )}{' '}
+                    ·{' '}
+                    <span className="text-emerald-700">
+                      {relationshipSummary.lastContact.activity_type}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-xs text-slate-400 italic">No contact yet</span>
                 )}
               </div>
             </div>
 
-            {/* Account Owner */}
-            <div className="flex flex-col pl-3 border-l border-slate-200">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Assigned Representative
-              </label>
-              <div className="flex items-center gap-1.5">
-                <div className="h-6 w-6 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-[10px] font-bold">
-                  {assignedSalesmanName.charAt(0).toUpperCase()}
-                </div>
-                <span className="text-xs font-bold text-slate-800">{assignedSalesmanName}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ---------------- Quick Direct Contact Actions Strip ---------------- */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-            Direct Reach:
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Quick Call */}
-          <a
-            href={cleanPhone ? `tel:${cleanPhone}` : undefined}
-            onClick={(e) => {
-              if (!cleanPhone) e.preventDefault();
-            }}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold border transition ${
-              cleanPhone
-                ? 'bg-indigo-50/80 text-indigo-700 border-indigo-200 hover:bg-indigo-100/90 cursor-pointer'
-                : 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed opacity-50'
-            }`}
-            title={cleanPhone ? `Direct Call: ${client.phone || client.whatsapp}` : 'No phone registered'}
-          >
-            <Phone className="h-3.5 w-3.5 text-indigo-600" />
-            <span>Call {client.phone ? `(${client.phone})` : ''}</span>
-          </a>
-
-          {/* Quick WhatsApp */}
-          <a
-            href={cleanWhatsapp ? `https://wa.me/${cleanWhatsapp}` : undefined}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(e) => {
-              if (!cleanWhatsapp) e.preventDefault();
-            }}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold border transition ${
-              cleanWhatsapp
-                ? 'bg-emerald-50/80 text-emerald-700 border-emerald-200 hover:bg-emerald-100/90 cursor-pointer'
-                : 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed opacity-50'
-            }`}
-            title={cleanWhatsapp ? `Open WhatsApp: ${client.whatsapp || client.phone}` : 'No WhatsApp registered'}
-          >
-            <MessageSquare className="h-3.5 w-3.5 text-emerald-600" />
-            <span>WhatsApp</span>
-            <ExternalLink className="h-3 w-3 text-slate-400" />
-          </a>
-
-          {/* Quick Email */}
-          <a
-            href={client.email ? `mailto:${client.email}` : undefined}
-            onClick={(e) => {
-              if (!client.email) e.preventDefault();
-            }}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold border transition ${
-              client.email
-                ? 'bg-blue-50/80 text-blue-700 border-blue-200 hover:bg-blue-100/90 cursor-pointer'
-                : 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed opacity-50'
-            }`}
-            title={client.email ? `Send Email: ${client.email}` : 'No email registered'}
-          >
-            <Mail className="h-3.5 w-3.5 text-blue-600" />
-            <span>Email</span>
-            <ExternalLink className="h-3 w-3 text-slate-400" />
-          </a>
-
-          {/* Quick Log Interaction */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('communication')}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition cursor-pointer"
-          >
-            <FileText className="h-3.5 w-3.5 text-slate-600" />
-            <span>Log Interaction</span>
-          </button>
-        </div>
-      </div>
-
-      {/* ---------------- Post-Sale Relationship Health Strip (Section 11, 12, 19) ---------------- */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Activities Logged */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 mb-2">
-            <span>Customer Interactions</span>
-            <div className="h-7 w-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-              <Phone className="h-3.5 w-3.5" />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <div className="text-2xl font-black text-slate-900">{metrics.totalActivities}</div>
-            <p className="text-[11px] text-slate-500">
-              Total activities recorded across calls, meetings, and check-ins
-            </p>
-          </div>
-        </div>
-
-        {/* Card 2: Follow-up Health */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 mb-2">
-            <span>Follow-up Tracking</span>
-            <div className="h-7 w-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <Calendar className="h-3.5 w-3.5" />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">{metrics.totalFollowups}</span>
-              <span className="text-xs font-bold text-emerald-700">
-                {metrics.completedCount} Done
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500">
-              {metrics.pendingCount} pending task{metrics.pendingCount === 1 ? '' : 's'} scheduled
-            </p>
-          </div>
-        </div>
-
-        {/* Card 3: Last Contacted */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 mb-2">
-            <span>Last Interaction</span>
-            <div className="h-7 w-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center">
-              <Clock className="h-3.5 w-3.5" />
-            </div>
-          </div>
-          {metrics.lastContact ? (
-            <div className="space-y-1">
-              <div className="flex items-center gap-1.5">
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700">
-                  {metrics.lastContact.activity_type}
-                </span>
-                <span className="text-xs font-bold text-slate-800 truncate">
-                  {metrics.lastContact.outcome || 'Logged'}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500">
-                {formatTimestamp(metrics.lastContact.activity_date || metrics.lastContact.activity_at)}
-              </p>
-            </div>
-          ) : (
-            <p className="text-xs text-slate-400 italic">No direct interactions recorded yet</p>
-          )}
-        </div>
-
-        {/* Card 4: Next Follow-up Action */}
-        <div
-          className={`rounded-2xl border p-4 shadow-xs flex flex-col justify-between ${
-            metrics.isOverdue
-              ? 'border-rose-200 bg-rose-50/40'
-              : metrics.nextFollowUp
-              ? 'border-emerald-200 bg-emerald-50/40'
-              : 'border-slate-200 bg-white'
-          }`}
-        >
-          <div className="flex items-center justify-between text-xs font-semibold mb-2">
-            <span className={metrics.isOverdue ? 'text-rose-800' : 'text-slate-500'}>
-              {metrics.isOverdue ? 'Overdue Follow-up' : 'Next Follow-up'}
-            </span>
+            {/* Next Follow-up */}
             <div
-              className={`h-7 w-7 rounded-lg flex items-center justify-center ${
-                metrics.isOverdue
-                  ? 'bg-rose-100 text-rose-700'
-                  : metrics.nextFollowUp
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : 'bg-slate-100 text-slate-600'
+              className={`rounded-xl border p-3.5 shadow-2xs ${
+                relationshipSummary.isOverdue
+                  ? 'bg-rose-50/70 border-rose-200'
+                  : 'bg-white border-slate-200/80'
               }`}
             >
-              <CalendarPlus className="h-3.5 w-3.5" />
-            </div>
-          </div>
-
-          {metrics.nextFollowUp ? (
-            <div className="space-y-1">
-              <div className="text-xs font-bold text-slate-900 truncate">
-                {metrics.nextFollowUp.action}
-              </div>
-              <p
-                className={`text-[11px] font-semibold ${
-                  metrics.isOverdue ? 'text-rose-700' : 'text-slate-600'
-                }`}
-              >
-                {formatTimestamp(metrics.nextFollowUp.scheduled_at)}
-              </p>
-            </div>
-          ) : (
-            <div>
-              <p className="text-xs text-slate-400 italic mb-1.5">No upcoming follow-up</p>
-              <button
-                type="button"
-                onClick={() => handleOpenScheduleFollowUp('Customer Check-in')}
-                className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline inline-flex items-center gap-1"
-              >
-                <Plus className="h-3 w-3" />
-                <span>Schedule Now</span>
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ---------------- Navigation Tabs ---------------- */}
-      <div className="border-b border-slate-200">
-        <nav className="flex space-x-2 sm:space-x-4 overflow-x-auto pb-px">
-          <button
-            type="button"
-            onClick={() => setActiveTab('communication')}
-            className={`flex items-center gap-2 py-3 px-3 sm:px-4 text-xs sm:text-sm font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'communication'
-                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50 rounded-t-xl'
-                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
-            }`}
-          >
-            <MessageSquare className="h-4 w-4" />
-            <span>Communication Center</span>
-            <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
-              {activities.length}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('timeline')}
-            className={`flex items-center gap-2 py-3 px-3 sm:px-4 text-xs sm:text-sm font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'timeline'
-                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50 rounded-t-xl'
-                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
-            }`}
-          >
-            <History className="h-4 w-4" />
-            <span>Activity Timeline</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('followups')}
-            className={`flex items-center gap-2 py-3 px-3 sm:px-4 text-xs sm:text-sm font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'followups'
-                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50 rounded-t-xl'
-                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
-            }`}
-          >
-            <CheckSquare className="h-4 w-4" />
-            <span>Follow-ups & Check-ins</span>
-            {metrics.pendingCount > 0 && (
-              <span className="ml-1 rounded-full bg-indigo-100 text-indigo-700 px-2 py-0.5 text-[11px] font-bold">
-                {metrics.pendingCount}
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+                {relationshipSummary.isOverdue ? 'Overdue Follow-up' : 'Next Follow-up'}
               </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            id="client-related-leads-tab-btn"
-            onClick={() => setActiveTab('opportunities')}
-            className={`flex items-center gap-2 py-3 px-3 sm:px-4 text-xs sm:text-sm font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'opportunities'
-                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50 rounded-t-xl'
-                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
-            }`}
-          >
-            <Sparkles className="h-4 w-4" />
-            <span>Related Leads & Opportunities</span>
-            {relatedLeads.length > 0 && (
-              <span className="ml-1 rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[11px] font-bold">
-                {relatedLeads.length}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            id="client-transfers-tab-btn"
-            onClick={() => setActiveTab('transfers')}
-            className={`flex items-center gap-2 py-3 px-3 sm:px-4 text-xs sm:text-sm font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'transfers'
-                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50 rounded-t-xl'
-                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
-            }`}
-          >
-            <History className="h-4 w-4" />
-            <span>Transfer History</span>
-            {clientTransfers.length > 0 && (
-              <span className="ml-1 rounded-full bg-slate-200 text-slate-700 px-2 py-0.5 text-[11px] font-bold">
-                {clientTransfers.length}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('profile')}
-            className={`flex items-center gap-2 py-3 px-3 sm:px-4 text-xs sm:text-sm font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
-              activeTab === 'profile'
-                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50 rounded-t-xl'
-                : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
-            }`}
-          >
-            <Building2 className="h-4 w-4" />
-            <span>Account Profile</span>
-          </button>
-        </nav>
-      </div>
-
-      {/* ---------------- Tab Contents ---------------- */}
-
-      {/* TAB 1: COMMUNICATION CENTER */}
-      {activeTab === 'communication' && (
-        <div className="space-y-6">
-          <CommunicationCenter
-            client={client}
-            activities={activities}
-            followups={followups}
-            loadingActivities={loadingActivities}
-            onLogActivity={handleLogActivity}
-            onOpenScheduleFollowUp={handleOpenScheduleFollowUp}
-            hasAccess={hasAccess}
-          />
-        </div>
-      )}
-
-      {/* TAB 2: ACTIVITY TIMELINE */}
-      {activeTab === 'timeline' && (
-        <div className="space-y-6">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Complete Historical Audit Timeline</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Chronological record of all system events, sales interactions, conversion milestones, and follow-ups.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveTab('communication')}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 text-indigo-700 px-3 py-1.5 text-xs font-bold hover:bg-indigo-100 transition self-start sm:self-auto cursor-pointer"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>Log New Activity</span>
-              </button>
-            </div>
-
-            <ActivityTimeline
-              activities={activities}
-              loading={loadingActivities}
-              onLogFirstActivity={() => setActiveTab('communication')}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: FOLLOW-UPS & CHECK-INS */}
-      {activeTab === 'followups' && (
-        <div className="space-y-6">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Customer Follow-ups & Relationship Check-ins</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Manage post-sale check-ins, repeat order discussions, payment verifications, and scheduled calls.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleOpenScheduleFollowUp('Customer Check-in')}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-2xs hover:bg-indigo-700 transition cursor-pointer"
-                >
-                  <CalendarPlus className="h-3.5 w-3.5" />
-                  <span>Schedule Follow-up</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Filter pills */}
-            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setFollowUpFilter('all')}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                  followUpFilter === 'all'
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                All ({followups.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFollowUpFilter('pending')}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                  followUpFilter === 'pending'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
-                }`}
-              >
-                Pending ({metrics.pendingCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFollowUpFilter('completed')}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                  followUpFilter === 'completed'
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                }`}
-              >
-                Completed ({metrics.completedCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFollowUpFilter('cancelled')}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                  followUpFilter === 'cancelled'
-                    ? 'bg-rose-600 text-white'
-                    : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
-                }`}
-              >
-                Cancelled ({followups.filter((f) => f.status === 'cancelled').length})
-              </button>
-            </div>
-
-            {/* Follow-ups List */}
-            {filteredFollowUps.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-8 text-center">
-                <Clock className="h-8 w-8 text-slate-400 mx-auto mb-2" />
-                <h4 className="text-xs font-bold text-slate-800">No Follow-ups Found</h4>
-                <p className="text-xs text-slate-500 mt-1">
-                  {followUpFilter === 'all'
-                    ? 'No follow-up actions have been scheduled for this client yet.'
-                    : `No ${followUpFilter} follow-ups in this account.`}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => handleOpenScheduleFollowUp('Customer Check-in')}
-                  className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
-                >
-                  <Plus className="h-3 w-3" />
-                  <span>Schedule a Check-in Now</span>
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredFollowUps.map((fu) => {
-                  const isPending = fu.status === 'pending';
-                  const isCompleted = fu.status === 'completed';
-                  const isCancelled = fu.status === 'cancelled';
-                  const isOverdue = isPending && new Date(fu.scheduled_at).getTime() < Date.now();
-
-                  return (
-                    <div
-                      key={fu.id}
-                      className={`rounded-xl border p-4 transition ${
-                        isOverdue
-                          ? 'border-rose-300 bg-rose-50/40'
-                          : isPending
-                          ? 'border-indigo-100 bg-indigo-50/20 hover:border-indigo-200'
-                          : isCompleted
-                          ? 'border-slate-200 bg-slate-50/60'
-                          : 'border-slate-200 bg-slate-50/40 opacity-70'
-                      }`}
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                isOverdue
-                                  ? 'bg-rose-100 text-rose-800'
-                                  : isPending
-                                  ? 'bg-indigo-100 text-indigo-800'
-                                  : isCompleted
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : 'bg-slate-200 text-slate-700'
-                              }`}
-                            >
-                              {fu.action}
-                            </span>
-
-                            <span className="text-xs font-bold text-slate-900">
-                              {formatTimestamp(fu.scheduled_at)}
-                            </span>
-
-                            {fu.title && (
-                              <span className="text-xs font-semibold text-slate-700">
-                                • {fu.title}
-                              </span>
-                            )}
-
-                            {fu.location && (
-                              <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                                <MapPin className="h-3 w-3 text-rose-500" />
-                                <span>{fu.location}</span>
-                              </span>
-                            )}
-
-                            {isOverdue && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase bg-rose-600 text-white">
-                                Overdue
-                              </span>
-                            )}
-                          </div>
-
-                          {fu.notes && (
-                            <p className="text-xs text-slate-600 line-clamp-2">{fu.notes}</p>
-                          )}
-
-                          {isCompleted && fu.outcome && (
-                            <div className="text-[11px] font-medium text-emerald-800 flex items-center gap-1">
-                              <CheckCircle2 className="h-3 w-3 text-emerald-600" />
-                              <span>Outcome: {fu.outcome}</span>
-                            </div>
-                          )}
-
-                          <div className="flex items-center gap-3 text-[11px] text-slate-400">
-                            <span>
-                              Assigned:{' '}
-                              <strong>{fu.assigned_to_name || getUserDisplayName(fu.assigned_to, usersList)}</strong>
-                            </span>
-                            {fu.completed_at && (
-                              <span>Completed: {formatTimestamp(fu.completed_at)}</span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Action buttons */}
-                        {isPending && hasAccess && (
-                          <div className="flex items-center gap-2 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedFollowUpForComplete(fu)}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition cursor-pointer"
-                            >
-                              <Check className="h-3 w-3" />
-                              <span>Complete</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => setSelectedFollowUpForReschedule(fu)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs transition cursor-pointer"
-                            >
-                              <RotateCcw className="h-3 w-3" />
-                              <span>Reschedule</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleCancelFollowUp(fu)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                              title="Cancel follow-up"
-                            >
-                              <XCircle className="h-4 w-4" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: RELATED LEADS & REPEAT OPPORTUNITIES */}
-      {activeTab === 'opportunities' && (
-        <div className="space-y-6">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  Related Leads & Sales Opportunities ({relatedLeads.length})
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Complete history of all won deals, originating leads, and ongoing repeat business opportunities associated with this client account.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                id="tab-create-opportunity-btn"
-                onClick={() => setIsCreateOpportunityOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white shadow-2xs hover:bg-emerald-800 transition cursor-pointer shrink-0"
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                <span>Create New Opportunity</span>
-              </button>
-            </div>
-
-            {/* Source Converted Lead Banner if exists */}
-            {(client.source_lead_id || sourceLead) && (
-              <div className="rounded-xl border border-emerald-300 bg-gradient-to-r from-emerald-50/90 to-teal-50/60 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-2xs">
-                <div className="flex items-start gap-3">
-                  <div className="h-9 w-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5">
-                    <CheckCircle2 className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-200/70 text-emerald-900">
-                        Originating Converted Lead
-                      </span>
-                      <span className="text-xs font-mono text-emerald-800">
-                        ID: {(sourceLead?.id || client.source_lead_id || '').substring(0, 10)}
-                      </span>
-                    </div>
-                    <h4 className="text-sm font-black text-slate-900 mt-1">
-                      {sourceLead?.project_name || sourceLead?.company_name || 'Original Sales Deal'}
-                    </h4>
-                    <p className="text-xs text-slate-600 mt-0.5">
-                      Deal Value: <strong className="text-emerald-950 font-black">{sourceLead?.estimated_value ? `SAR ${sourceLead.estimated_value.toLocaleString()}` : 'N/A'}</strong>
-                      {' • '}
-                      Assigned Rep: <strong className="text-slate-800">{getUserDisplayName(sourceLead?.assigned_to || client.owner_id, usersList)}</strong>
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => onNavigateToLead(sourceLead?.id || client.source_lead_id!)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-2xs transition cursor-pointer self-start sm:self-center shrink-0"
-                >
-                  <span>View Converted Lead</span>
-                  <ArrowUpRight className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-
-            {/* Related leads listing */}
-            {relatedLeads.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/40 p-8 text-center">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 mb-3">
-                  <Sparkles className="h-6 w-6" />
-                </div>
-                <h4 className="text-sm font-bold text-emerald-950">No Associated Leads or Opportunities</h4>
-                <p className="text-xs text-emerald-800/80 mt-1 max-w-md mx-auto">
-                  When this customer requests new products, services, or renewals, initiate a new sales opportunity to track it through the pipeline without modifying existing won deals.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setIsCreateOpportunityOpen(true)}
-                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2 text-xs font-bold text-white shadow-2xs hover:bg-emerald-800 transition cursor-pointer"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>Initiate First Repeat Opportunity</span>
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {relatedLeads.map((lead) => {
-                  const isSource = lead.id === client.source_lead_id || lead.id === sourceLead?.id;
-                  const isRepeat = lead.source_client_id === client.id;
-                  const relationBadge = isSource
-                    ? 'Originating Lead'
-                    : isRepeat
-                    ? 'Repeat Opportunity'
-                    : 'Associated Deal';
-
-                  return (
-                    <div
-                      key={lead.id}
-                      className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-2xs hover:border-emerald-300 hover:shadow-xs transition space-y-3"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
-                                isSource
-                                  ? 'bg-blue-50 text-blue-800 border-blue-200'
-                                  : isRepeat
-                                  ? 'bg-purple-50 text-purple-800 border-purple-200'
-                                  : 'bg-slate-50 text-slate-700 border-slate-200'
-                              }`}
-                            >
-                              {relationBadge}
-                            </span>
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-100">
-                              {lead.status}
-                            </span>
-                          </div>
-                          <h4 className="text-sm font-bold text-slate-900">
-                            {lead.project_name || lead.company_name}
-                          </h4>
-                        </div>
-
-                        <div className="text-right">
-                          <span className="text-[11px] text-slate-400 block font-semibold">Value</span>
-                          <span className="text-sm font-black text-slate-900">
-                            {lead.estimated_value
-                              ? `SAR ${lead.estimated_value.toLocaleString()}`
-                              : 'N/A'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 text-[11px] pt-2 border-t border-slate-100 text-slate-500">
-                        <div>
-                          <span className="block text-slate-400 font-medium">Priority:</span>
-                          <span className="font-bold text-slate-700">{lead.priority}</span>
-                        </div>
-                        <div>
-                          <span className="block text-slate-400 font-medium">Created:</span>
-                          <span className="font-semibold text-slate-700">
-                            {lead.created_at ? new Date(lead.created_at).toLocaleDateString() : 'N/A'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="pt-2 flex items-center justify-between">
-                        <span className="text-[11px] text-slate-400">
-                          Assigned: <strong>{getUserDisplayName(lead.assigned_to, usersList)}</strong>
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={() => onNavigateToLead(lead.id)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 hover:border-emerald-200 transition cursor-pointer"
-                        >
-                          <span>Open Deal</span>
-                          <ArrowUpRight className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 5: TRANSFER HISTORY */}
-      {activeTab === 'transfers' && (
-        <div className="space-y-6">
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-2xs">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-slate-100">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <History className="h-5 w-5 text-emerald-700" />
-                  <span>Client Ownership Transfer Audit Trail</span>
-                </h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Complete immutable log of all sales representatives and account owners assigned to this client.
-                </p>
-              </div>
-
-              {canTransfer && (
-                <button
-                  type="button"
-                  onClick={() => setIsTransferModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 shadow-2xs transition cursor-pointer self-start sm:self-auto"
-                >
-                  <UserCheck className="h-4 w-4" />
-                  <span>Transfer Client</span>
-                </button>
-              )}
-            </div>
-
-            {clientTransfers.length === 0 ? (
-              <div className="py-12 text-center">
-                <div className="mx-auto w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 mb-3 border border-slate-100">
-                  <History className="h-6 w-6" />
-                </div>
-                <h4 className="text-sm font-bold text-slate-700">No ownership transfers recorded</h4>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
-                  This client is currently managed by{' '}
-                  <strong className="text-slate-800">{client.owner_name || 'Unassigned'}</strong>. Any future reassignments will be logged here with timestamps and audit reasons.
-                </p>
-              </div>
-            ) : (
-              <div className="mt-6 divide-y divide-slate-100">
-                {clientTransfers.map((tr) => (
-                  <div key={tr.id} className="py-4 first:pt-0 last:pb-0 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-start gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-800 flex items-center justify-center font-bold text-xs shrink-0 border border-emerald-100">
-                        <History className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800">
-                          <span className="text-slate-500">From:</span>
-                          <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md text-xs font-bold">
-                            {tr.from_user_name || tr.previous_owner_name || 'Unassigned'}
-                          </span>
-                          <span className="text-slate-400 font-bold">&rarr;</span>
-                          <span className="text-slate-500">To:</span>
-                          <span className="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-md text-xs font-bold border border-emerald-200">
-                            {tr.to_user_name || tr.new_owner_name || 'New Rep'}
-                          </span>
-                        </div>
-                        {tr.reason && (
-                          <p className="text-xs text-slate-600 mt-1 italic">
-                            &ldquo;{tr.reason}&rdquo;
-                          </p>
-                        )}
-                        <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1">
-                          <span>Transferred by: <strong className="text-slate-600">{tr.transferred_by_name || 'Administrator'}</strong></span>
-                          <span>&bull;</span>
-                          <span>{new Date(tr.transferred_at || tr.timestamp || Date.now()).toLocaleString()}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 6: ACCOUNT PROFILE & SOURCE AUDIT */}
-      {activeTab === 'profile' && (
-        <div className="space-y-6">
-          {/* Historical Source Lead Anchor */}
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-2xs">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-5 w-5 text-emerald-700" />
-                  <h3 className="text-sm font-bold text-emerald-950">
-                    Original Source Lead Anchor & Audit Traceability
-                  </h3>
-                </div>
-                <p className="text-xs text-emerald-800/90 max-w-2xl">
-                  This Client account was converted from Won Lead{' '}
-                  <strong className="text-emerald-950">
-                    {sourceLead?.project_name || sourceLead?.company_name || client.source_lead_id}
-                  </strong>
-                  . The original lead and all historical records remain permanently preserved.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => onNavigateToLead(client.source_lead_id)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-bold text-white shadow-2xs hover:bg-emerald-800 transition cursor-pointer"
-                >
-                  <span>View Source Lead</span>
-                  <ArrowUpRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
-            {sourceLead && (
-              <div className="mt-4 pt-3 border-t border-emerald-200/60 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                <div>
-                  <span className="text-emerald-700 block text-[11px]">Original Value:</span>
-                  <span className="font-black text-emerald-950">
-                    {sourceLead.estimated_value
-                      ? `SAR ${sourceLead.estimated_value.toLocaleString()}`
-                      : 'N/A'}
+              <div className="mt-1 truncate">
+                {relationshipSummary.nextFollowUp ? (
+                  <span
+                    className={`text-sm font-bold ${
+                      relationshipSummary.isOverdue ? 'text-rose-700' : 'text-slate-800'
+                    }`}
+                  >
+                    {formatDateString(relationshipSummary.nextFollowUp.scheduled_at)} ·{' '}
+                    <span>{relationshipSummary.nextFollowUp.action}</span>
                   </span>
-                </div>
-                <div>
-                  <span className="text-emerald-700 block text-[11px]">Original Status:</span>
-                  <span className="font-bold text-emerald-950">{sourceLead.status}</span>
-                </div>
-                <div>
-                  <span className="text-emerald-700 block text-[11px]">Original Creation:</span>
-                  <span className="font-semibold text-emerald-950">
-                    {sourceLead.created_at ? new Date(sourceLead.created_at).toLocaleDateString() : 'N/A'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-emerald-700 block text-[11px]">Converted On:</span>
-                  <span className="font-semibold text-emerald-950">
-                    {client.created_at ? new Date(client.created_at).toLocaleDateString() : 'Recent'}
-                  </span>
-                </div>
+                ) : (
+                  <span className="text-xs text-slate-400 italic">None scheduled</span>
+                )}
               </div>
-            )}
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left 2 Cols: Detailed Contact Channels */}
-            <div className="lg:col-span-2 space-y-6">
-              <div className="rounded-2xl border border-slate-200/90 bg-white p-5 sm:p-6 shadow-2xs space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Detailed Account Contact Information
+          {/* 2-Column Content Layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            {/* Left 2 Cols: Key Contacts & Client Details & Quick Notes */}
+            <div className="lg:col-span-2 space-y-5">
+              {/* Card 1: Key Contacts */}
+              <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-2xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <User className="h-4 w-4 text-emerald-600" />
+                    <span>Key Contacts</span>
                   </h3>
                   <button
                     type="button"
                     onClick={() => setIsEditModalOpen(true)}
-                    className="text-xs text-emerald-700 hover:text-emerald-900 font-bold hover:underline"
+                    className="text-xs font-semibold text-emerald-700 hover:underline cursor-pointer"
                   >
-                    Edit Contact Details
+                    Edit
                   </button>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                  {/* Phone */}
-                  <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 flex items-center justify-between">
-                    <div>
-                      <span className="text-slate-400 font-semibold block text-[11px]">Direct Phone:</span>
-                      <span className="font-bold text-slate-800 text-sm">
-                        {client.phone || 'Not recorded'}
-                      </span>
-                    </div>
-                    {client.phone && (
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(client.phone!, 'phone')}
-                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition"
-                        title="Copy phone"
-                      >
-                        {copiedField === 'phone' ? (
-                          <Check className="h-4 w-4 text-emerald-600" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </button>
-                    )}
-                  </div>
-
-                  {/* WhatsApp */}
-                  <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 flex items-center justify-between">
-                    <div>
-                      <span className="text-slate-400 font-semibold block text-[11px]">WhatsApp:</span>
-                      <span className="font-bold text-slate-800 text-sm">
-                        {client.whatsapp || 'Not recorded'}
-                      </span>
-                    </div>
-                    {client.whatsapp && (
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(client.whatsapp!, 'whatsapp')}
-                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition"
-                        title="Copy WhatsApp"
-                      >
-                        {copiedField === 'whatsapp' ? (
-                          <Check className="h-4 w-4 text-emerald-600" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Email */}
-                  <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 flex items-center justify-between sm:col-span-2">
-                    <div>
-                      <span className="text-slate-400 font-semibold block text-[11px]">Email Address:</span>
-                      <span className="font-bold text-slate-800 text-sm">
-                        {client.email || 'Not recorded'}
-                      </span>
-                    </div>
-                    {client.email && (
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(client.email!, 'email')}
-                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition"
-                        title="Copy Email"
-                      >
-                        {copiedField === 'email' ? (
-                          <Check className="h-4 w-4 text-emerald-600" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Location */}
-                  <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
-                    <span className="text-slate-400 font-semibold block text-[11px]">Location / City:</span>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Primary Contact</span>
                     <span className="font-bold text-slate-800 text-sm">
-                      {client.location || 'Not specified'}
+                      {client.contact_person || 'Not specified'}
                     </span>
                   </div>
 
-                  {/* Classification */}
-                  <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
-                    <span className="text-slate-400 font-semibold block text-[11px]">Classification:</span>
-                    <span className="font-bold text-slate-800 text-sm">
-                      {client.client_type || 'B2B Commercial'}
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Role / Designation</span>
+                    <span className="font-medium text-slate-700">
+                      {client.contact_role || 'Account Manager / Lead Contact'}
                     </span>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Direct Phone</span>
+                    {client.phone ? (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <a
+                          href={`tel:${client.phone}`}
+                          className="font-semibold text-emerald-700 hover:underline"
+                        >
+                          {client.phone}
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(client.phone || '', 'phone_ov')}
+                          className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          {copiedField === 'phone_ov' ? (
+                            <Check className="h-3 w-3 text-emerald-600" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 italic">None</span>
+                    )}
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">WhatsApp</span>
+                    {client.whatsapp ? (
+                      <a
+                        href={`https://wa.me/${client.whatsapp.replace(/[^0-9]/g, '')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-semibold text-teal-700 hover:underline block mt-0.5"
+                      >
+                        {client.whatsapp}
+                      </a>
+                    ) : (
+                      <span className="text-slate-400 italic">None</span>
+                    )}
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <span className="text-slate-400 block text-[11px]">Email Address</span>
+                    {client.email ? (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <a
+                          href={`mailto:${client.email}`}
+                          className="font-semibold text-blue-700 hover:underline"
+                        >
+                          {client.email}
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(client.email || '', 'email_ov')}
+                          className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          {copiedField === 'email_ov' ? (
+                            <Check className="h-3 w-3 text-emerald-600" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 italic">None</span>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Handover & Relationship Notes */}
-              <div className="rounded-2xl border border-slate-200/90 bg-white p-5 sm:p-6 shadow-2xs space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-slate-900">Relationship Notes & Briefing</h3>
-                  <button
-                    type="button"
-                    onClick={() => setIsEditModalOpen(true)}
-                    className="text-xs text-emerald-700 hover:text-emerald-900 font-bold hover:underline"
-                  >
-                    Edit Notes
-                  </button>
+              {/* Card 2: Quick Notes */}
+              <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-2xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-indigo-600" />
+                    <span>Relationship Notes</span>
+                  </h3>
+                  {notesSavedSuccess && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
+                      <Check className="h-3.5 w-3.5" />
+                      <span>Saved</span>
+                    </span>
+                  )}
                 </div>
 
-                {client.notes ? (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
-                    {client.notes}
+                <div className="space-y-2">
+                  <textarea
+                    rows={3}
+                    value={quickNotes}
+                    onChange={(e) => setQuickNotes(e.target.value)}
+                    placeholder="Record key details about this client: preferred communication channel, decision makers, project preferences, special conditions..."
+                    className="w-full rounded-xl border border-slate-200 p-3 text-xs text-slate-800 focus:border-emerald-600 focus:outline-none placeholder:text-slate-400 resize-none leading-relaxed"
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleSaveQuickNotes}
+                      disabled={isSavingNotes}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition cursor-pointer disabled:opacity-50"
+                    >
+                      {isSavingNotes ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                      <span>Save Notes</span>
+                    </button>
                   </div>
-                ) : (
-                  <p className="text-xs text-slate-400 italic">No special handover notes recorded.</p>
-                )}
+                </div>
               </div>
             </div>
 
-            {/* Right 1 Col: Account Overview & Metadata */}
-            <div className="space-y-6">
-              <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-2xs space-y-4">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                  Account Overview
+            {/* Right Column: Client Details & Ownership & Tags */}
+            <div className="space-y-5">
+              {/* Card 3: Client Details */}
+              <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-2xs">
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider border-b border-slate-100 pb-3 mb-3 flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-slate-500" />
+                  <span>Account Details</span>
                 </h3>
 
                 <div className="space-y-3 text-xs">
-                  <div className="flex justify-between py-1.5 border-b border-slate-100">
-                    <span className="text-slate-500">Account ID</span>
-                    <span className="font-mono text-slate-700">{client.id.substring(0, 10)}...</span>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Classification</span>
+                    <span className="font-semibold text-slate-800">
+                      {client.client_type || 'B2B Commercial'}
+                    </span>
                   </div>
 
-                  <div className="flex justify-between py-1.5 border-b border-slate-100">
-                    <span className="text-slate-500">Account Status</span>
-                    <span
-                      className={`font-bold px-2 py-0.5 rounded-full text-[11px] ${
-                        isActive
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-slate-200 text-slate-700'
-                      }`}
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Location</span>
+                    <span className="font-semibold text-slate-800">
+                      {client.location || client.address || 'Muscat, Oman'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Client Since</span>
+                    <span className="font-semibold text-slate-800">
+                      {formatDateString(client.client_since || client.created_at)}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Source</span>
+                    <span className="font-semibold text-slate-800">
+                      {client.source || (client.source_lead_id ? 'Converted Won Lead' : 'Direct Customer')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 4: Ownership */}
+              <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-2xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <UserCheck className="h-4 w-4 text-emerald-600" />
+                    <span>Ownership</span>
+                  </h3>
+                  {canTransfer && (
+                    <button
+                      type="button"
+                      onClick={() => setIsTransferModalOpen(true)}
+                      className="text-xs font-semibold text-emerald-700 hover:underline cursor-pointer"
                     >
-                      {client.status}
-                    </span>
+                      Transfer
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Account Owner</span>
+                    <span className="font-bold text-slate-900 text-sm">{assignedOwnerName}</span>
                   </div>
 
-                  <div className="flex justify-between py-1.5 border-b border-slate-100">
-                    <span className="text-slate-500">Assigned Representative</span>
-                    <span className="font-bold text-slate-800">{assignedSalesmanName}</span>
-                  </div>
+                  {client.created_by_name && (
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">Created By</span>
+                      <span className="font-medium text-slate-700">{client.created_by_name}</span>
+                    </div>
+                  )}
 
-                  <div className="flex justify-between py-1.5 border-b border-slate-100">
-                    <span className="text-slate-500">Converted Date</span>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Created On</span>
                     <span className="font-medium text-slate-700">
-                      {client.created_at ? new Date(client.created_at).toLocaleDateString() : 'N/A'}
+                      {formatDateString(client.created_at)}
                     </span>
                   </div>
+                </div>
+              </div>
 
-                  <div className="flex justify-between py-1.5">
-                    <span className="text-slate-500">Last Updated</span>
-                    <span className="font-medium text-slate-700">
-                      {client.updated_at ? new Date(client.updated_at).toLocaleDateString() : 'N/A'}
-                    </span>
-                  </div>
+              {/* Card 5: Tags */}
+              <div className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-2xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <Tag className="h-4 w-4 text-amber-600" />
+                    <span>Tags</span>
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setIsTagModalOpen(true)}
+                    className="text-xs font-semibold text-emerald-700 hover:underline cursor-pointer"
+                  >
+                    Manage
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {Array.isArray(client.tags) && client.tags.length > 0 ? (
+                    client.tags.map((tagName) => (
+                      <TagBadge
+                        key={tagName}
+                        name={tagName}
+                        onRemove={() => handleRemoveTag(tagName)}
+                      />
+                    ))
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">No tags assigned</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -1861,101 +1370,313 @@ export const ClientDetailsPage: React.FC<ClientDetailsPageProps> = ({
         </div>
       )}
 
-      {/* ---------------- Modals ---------------- */}
+      {/* 7 & 8. ACTIVITY TIMELINE TAB */}
+      {activeTab === 'activity' && (
+        <ClientActivityTimeline
+          activities={activities}
+          loading={loadingActivities}
+          users={usersList}
+          onAddActivity={() => {
+            setActivityInitialType('Call');
+            setIsAddActivityOpen(true);
+          }}
+        />
+      )}
+
+      {/* 10 & 11. RELATED LEADS / PROJECTS TAB */}
+      {activeTab === 'opportunities' && (
+        <ClientRelatedLeads
+          client={client}
+          leads={relatedLeads}
+          followups={followups}
+          activities={activities}
+          users={usersList}
+          onNavigateToLead={onNavigateToLead}
+          onCreateOpportunity={() => setIsCreateOpportunityOpen(true)}
+        />
+      )}
+
+      {/* 12. FOLLOW-UPS TAB */}
+      {activeTab === 'followups' && (
+        <ClientFollowUps
+          client={client}
+          followups={followups}
+          users={usersList}
+          onScheduleFollowUp={handleOpenScheduleModal}
+          onCompleteFollowUp={(fu) => setSelectedFollowUpForComplete(fu)}
+          onRescheduleFollowUp={(fu) => setSelectedFollowUpForReschedule(fu)}
+          onCancelFollowUp={handleCancelFollowUp}
+        />
+      )}
+
+      {/* 18. ATTACHMENTS TAB */}
+      {activeTab === 'attachments' && (
+        <ClientAttachmentsSection
+          clientId={client.id}
+          companyName={client.company_name}
+          attachments={attachments}
+          loading={loadingAttachments}
+          canUpload={true}
+          canDelete={isAdmin || client.owner_id === (userProfile?.id || currentUser?.uid)}
+          onUpload={handleUploadAttachment}
+          onDelete={handleDeleteAttachment}
+        />
+      )}
+
+      {/* TRANSFERS & AUDIT TAB (Optional) */}
+      {activeTab === 'transfers' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">
+                Ownership Transfers &amp; Audit Trail
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Complete history of client ownership changes. Past activities preserve original performers.
+              </p>
+            </div>
+            {canTransfer && (
+              <button
+                type="button"
+                onClick={() => setIsTransferModalOpen(true)}
+                className="zaynops-btn-primary py-1.5 px-3.5 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+              >
+                <UserCheck className="h-3.5 w-3.5" />
+                <span>Transfer Client</span>
+              </button>
+            )}
+          </div>
+
+          {clientTransfers.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+              <History className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+              <p className="text-xs font-semibold text-slate-800">No Transfers Recorded</p>
+              <p className="text-xs text-slate-400 mt-1">
+                This account is currently with original owner {assignedOwnerName}.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs divide-y divide-slate-100">
+              {clientTransfers.map((tr) => (
+                <div key={tr.id} className="p-4 flex items-center justify-between text-xs">
+                  <div>
+                    <div className="font-semibold text-slate-900">
+                      Transferred from <span className="font-bold">{tr.from_user_name}</span> to{' '}
+                      <span className="font-bold text-emerald-800">{tr.to_user_name}</span>
+                    </div>
+                    {tr.reason && <p className="text-slate-500 mt-0.5">{tr.reason}</p>}
+                  </div>
+                  <span className="text-slate-400 font-medium">
+                    {formatDateString(tr.transferred_at)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ---------------- MODALS ---------------- */}
+
+      {/* Add Client Activity Modal (Context-aware, no Lead ID required) */}
+      <AddClientActivityModal
+        isOpen={isAddActivityOpen}
+        client={client}
+        initialType={activityInitialType}
+        users={usersList}
+        onClose={() => setIsAddActivityOpen(false)}
+        onActivityAdded={() => {
+          // Re-trigger / refresh
+        }}
+      />
+
+      {/* Schedule Follow-up Modal (Context-aware for client) */}
+      <ScheduleFollowUpModal
+        isOpen={isScheduleFollowUpOpen}
+        onClose={() => setIsScheduleFollowUpOpen(false)}
+        initialClientId={client.id}
+        client={client}
+        clientRecord={client}
+        isClientContext={true}
+        targetType="client"
+        initialAction={scheduleFollowUpAction}
+        users={usersList}
+        leads={relatedLeads}
+        onScheduled={() => setIsScheduleFollowUpOpen(false)}
+      />
+
+      {/* Complete Follow-up Modal */}
+      {selectedFollowUpForComplete && (
+        <CompleteFollowUpModal
+          isOpen={Boolean(selectedFollowUpForComplete)}
+          onClose={() => setSelectedFollowUpForComplete(null)}
+          followUp={selectedFollowUpForComplete}
+          onCompleted={handleCompleteFollowUp}
+        />
+      )}
+
+      {/* Reschedule Follow-up Modal */}
+      {selectedFollowUpForReschedule && (
+        <RescheduleFollowUpModal
+          isOpen={Boolean(selectedFollowUpForReschedule)}
+          onClose={() => setSelectedFollowUpForReschedule(null)}
+          followUp={selectedFollowUpForReschedule}
+          onRescheduled={handleRescheduleFollowUp}
+        />
+      )}
 
       {/* Edit Client Modal */}
       <EditClientModal
         isOpen={isEditModalOpen}
         onClose={() => setIsEditModalOpen(false)}
         client={client}
+        onUpdated={() => {}}
       />
 
-      {/* Transfer Ownership Modal */}
-      {canTransfer && (
-        <TransferClientModal
-          isOpen={isTransferModalOpen}
-          onClose={() => setIsTransferModalOpen(false)}
-          client={client}
-          currentOwnerName={assignedSalesmanName}
-        />
-      )}
+      {/* Transfer Client Modal */}
+      <TransferClientModal
+        isOpen={isTransferModalOpen}
+        onClose={() => setIsTransferModalOpen(false)}
+        client={client}
+        onTransferred={() => {}}
+      />
 
-      {/* Create Repeat Opportunity Modal */}
+      {/* Create Opportunity Modal */}
       <CreateOpportunityModal
         isOpen={isCreateOpportunityOpen}
-        client={client}
         onClose={() => setIsCreateOpportunityOpen(false)}
-        onOpportunityCreated={(newLead) => {
+        client={client}
+        onCreated={(lead) => {
           setIsCreateOpportunityOpen(false);
-          setActiveTab('opportunities');
+          onNavigateToLead(lead.id);
         }}
       />
 
-      {/* Schedule Follow-up Modal */}
-      <ScheduleFollowUpModal
-        isOpen={isScheduleFollowUpOpen}
-        leads={
-          sourceLead
-            ? [sourceLead, ...allLeads.filter((l) => l.id !== sourceLead.id)]
-            : allLeads
-        }
-        users={usersList}
-        client={client}
-        targetType="Client"
-        initialClientId={client.id}
-        initialAction={scheduleFollowUpAction}
-        onClose={() => setIsScheduleFollowUpOpen(false)}
-        onSchedule={handleScheduleFollowUp}
+      {/* Tag Selector Modal */}
+      <TagSelectorModal
+        isOpen={isTagModalOpen}
+        onClose={() => setIsTagModalOpen(false)}
+        title="Manage Client Tags"
+        currentTags={client.tags || []}
+        onAddTag={handleAddTag}
+        onRemoveTag={handleRemoveTag}
       />
 
-      {/* Complete Follow-up Modal */}
-      <CompleteFollowUpModal
-        isOpen={!!selectedFollowUpForComplete}
-        followUp={selectedFollowUpForComplete}
-        onClose={() => setSelectedFollowUpForComplete(null)}
-        onComplete={handleCompleteFollowUp}
-      />
-
-      {/* Reschedule Follow-up Modal */}
-      <RescheduleFollowUpModal
-        isOpen={!!selectedFollowUpForReschedule}
-        followUp={selectedFollowUpForReschedule}
-        onClose={() => setSelectedFollowUpForReschedule(null)}
-        onReschedule={handleRescheduleFollowUp}
-      />
-
-      {/* Tag Selector Modal (Phase R) */}
-      {client && (
-        <TagSelectorModal
-          isOpen={isTagModalOpen}
-          onClose={() => setIsTagModalOpen(false)}
+      {/* Merge Modal */}
+      {activeMergeCandidate && (
+        <RecordMergeModal
+          isOpen={Boolean(activeMergeCandidate)}
+          onClose={() => setActiveMergeCandidate(null)}
+          candidate={activeMergeCandidate}
           entityType="Client"
-          currentTags={client.tags || []}
-          onSelectTag={handleSelectTag}
-          onRemoveTag={handleRemoveTag}
-          entityName={client.company_name}
+          onMergeComplete={() => {
+            setActiveMergeCandidate(null);
+            onBack();
+          }}
         />
       )}
 
-      {/* Record Merge Modal (Phase S) */}
-      {activeMergeCandidate && client && (
-        <RecordMergeModal
-          isOpen={true}
-          onClose={() => setActiveMergeCandidate(null)}
-          entityType="Client"
-          recordA={activeMergeCandidate.record_a}
-          recordB={activeMergeCandidate.record_b}
-          matchReason={activeMergeCandidate.match_reasons.join(' • ')}
-          matchScore={activeMergeCandidate.confidence_score}
-          onMergeSuccess={() => {
-            setActiveMergeCandidate(null);
-            setDuplicateMatches([]);
-          }}
-          onMarkNotDuplicate={() => {
-            setActiveMergeCandidate(null);
-            setDuplicateMatches((prev) => prev.filter((m) => m.pair_id !== activeMergeCandidate.pair_id));
-          }}
-        />
+      {/* Delete Client Confirmation Modal (Admin Only) */}
+      {isDeleteModalOpen && client && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
+                  <Trash2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Delete Client?</h3>
+                  <p className="text-xs text-slate-500">Authorized deletion with audit tracking</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-rose-100 bg-rose-50/70 p-3.5 text-xs text-rose-800 space-y-1">
+              <p className="font-semibold text-rose-950">
+                This will permanently delete this client and its CRM records:
+              </p>
+              <p className="font-bold text-sm text-slate-900">
+                {client.company_name}
+              </p>
+              <p className="text-[11px] text-rose-700">
+                This action cannot be undone. Active follow-ups will be removed. Historical leads will be unlinked and preserved in your pipeline.
+              </p>
+            </div>
+
+            {deleteError && (
+              <div className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-xs text-rose-700 font-semibold flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+
+            <div className="space-y-3 pt-1">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Reason for client removal <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  placeholder="e.g. Account dissolved, duplicate error, or requested data purge"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 p-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-rose-500 focus:bg-white focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Type <span className="font-mono font-bold text-rose-600">DELETE</span> to confirm <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="DELETE"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs font-mono text-slate-900 placeholder:text-slate-300 focus:border-rose-500 focus:bg-white focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(false)}
+                disabled={isDeleting}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                id="confirm-delete-client-modal-btn"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting || deleteConfirmText.trim() !== 'DELETE' || !deleteReason.trim()}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Deleting Client...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Delete Client</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -66,6 +66,9 @@
       "properties": {
         "id": { "type": "string" },
         "lead_id": { "type": "string" },
+        "client_id": { "type": "string" },
+        "entity_type": { "type": "string", "enum": ["Lead", "Client"] },
+        "entity_id": { "type": "string" },
         "company_name": { "type": "string" },
         "contact_person": { "type": "string" },
         "phone": { "type": "string" },
@@ -87,7 +90,7 @@
         "created_at": { "type": "string", "format": "date-time" },
         "updated_at": { "type": "string", "format": "date-time" }
       },
-      "required": ["lead_id", "action", "scheduled_at", "status", "assigned_to", "created_by"]
+      "required": ["action", "scheduled_at", "status", "assigned_to", "created_by"]
     },
     "Attachment": {
       "title": "Lead Attachment Record",
@@ -331,6 +334,18 @@
     "/clients/{clientId}": {
       "schema": "Client",
       "description": "Converted customer accounts with sales ownership and direct links to historical leads"
+    },
+    "/clients/{clientId}/activities/{activityId}": {
+      "schema": "LeadActivity",
+      "description": "Client interaction and relationship activity timeline subcollection"
+    },
+    "/clients/{clientId}/followups/{followupId}": {
+      "schema": "FollowUp",
+      "description": "Client follow-up commitments and scheduled activities subcollection"
+    },
+    "/clients/{clientId}/attachments/{attachmentId}": {
+      "schema": "Attachment",
+      "description": "Client document and attachment metadata subcollection"
     },
     "/users/{userId}": {
       "schema": "User",

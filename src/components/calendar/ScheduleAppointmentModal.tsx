@@ -72,6 +72,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
   );
   const [selectedLeadId, setSelectedLeadId] = useState<string>(initialLeadId || '');
   const [selectedClientId, setSelectedClientId] = useState<string>(initialClientId || '');
+  const [optionalLeadId, setOptionalLeadId] = useState<string>('');
   const [recordSearch, setRecordSearch] = useState<string>('');
 
   // Appointment Details
@@ -108,9 +109,11 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
       if (initialClientId) {
         setRecordType('Client');
         setSelectedClientId(initialClientId);
+        setOptionalLeadId('');
       } else if (initialLeadId) {
         setRecordType('Lead');
         setSelectedLeadId(initialLeadId);
+        setOptionalLeadId('');
       }
       if (initialDate) setAppointmentDate(initialDate);
       if (initialTime) setStartTime(initialTime);
@@ -234,7 +237,7 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
       const leadIdToStore =
         recordType === 'Lead'
           ? selectedLeadId
-          : undefined;
+          : (optionalLeadId.trim() ? optionalLeadId : undefined);
 
       const payload: CreateFollowUpInput = {
         lead_id: leadIdToStore,
@@ -404,6 +407,34 @@ export const ScheduleAppointmentModal: React.FC<ScheduleAppointmentModalProps> =
                     </option>
                   ))}
                 </select>
+
+                {/* Optional Related Project / Lead */}
+                {selectedClientId && (() => {
+                  const clientLeads = allLeads.filter((l) => l.client_id === selectedClientId);
+                  if (clientLeads.length === 0) return null;
+                  return (
+                    <div className="pt-2">
+                      <label className="block text-xs font-semibold text-slate-600 mb-1 flex items-center gap-1">
+                        <Briefcase className="h-3.5 w-3.5 text-slate-400" />
+                        <span>Related Project / Lead</span>
+                        <span className="text-slate-400 font-normal">(Optional)</span>
+                      </label>
+                      <select
+                        id="schedule-optional-lead"
+                        value={optionalLeadId}
+                        onChange={(e) => setOptionalLeadId(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs text-slate-800 focus:border-emerald-500 focus:outline-none"
+                      >
+                        <option value="">None — General Relationship Activity</option>
+                        {clientLeads.map((cl) => (
+                          <option key={cl.id} value={cl.id}>
+                            {cl.company_name} — {cl.project_name || cl.requirement || 'Project'} ({cl.status})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>

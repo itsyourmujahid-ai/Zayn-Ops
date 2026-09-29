@@ -13,7 +13,8 @@ interface RescheduleFollowUpModalProps {
   isOpen: boolean;
   followUp: FollowUpRecord | null;
   onClose: () => void;
-  onReschedule: (input: RescheduleFollowUpInput) => Promise<void>;
+  onReschedule?: (input: RescheduleFollowUpInput) => Promise<void>;
+  onRescheduled?: (input: RescheduleFollowUpInput) => Promise<void>;
 }
 
 export const RescheduleFollowUpModal: React.FC<RescheduleFollowUpModalProps> = ({
@@ -21,6 +22,7 @@ export const RescheduleFollowUpModal: React.FC<RescheduleFollowUpModalProps> = (
   followUp,
   onClose,
   onReschedule,
+  onRescheduled,
 }) => {
   const { userProfile } = useAuth();
   const [newAction, setNewAction] = useState<FollowUpActionType>(
@@ -46,16 +48,19 @@ export const RescheduleFollowUpModal: React.FC<RescheduleFollowUpModalProps> = (
     try {
       setSubmitting(true);
       setError('');
-      await onReschedule({
-        lead_id: followUp.lead_id,
-        client_id: followUp.client_id,
-        followup_id: followUp.id,
-        new_scheduled_at: combinedDateTime,
-        new_action: newAction,
-        notes: notes.trim(),
-        performer_id: userProfile?.id,
-        performer_name: userProfile?.full_name,
-      });
+      const callback = onReschedule || onRescheduled;
+      if (callback) {
+        await callback({
+          lead_id: followUp.lead_id,
+          client_id: followUp.client_id,
+          followup_id: followUp.id,
+          new_scheduled_at: combinedDateTime,
+          new_action: newAction,
+          notes: notes.trim(),
+          performer_id: userProfile?.id,
+          performer_name: userProfile?.full_name,
+        });
+      }
       onClose();
     } catch (err: any) {
       setError(err.message || 'Failed to reschedule follow-up');

@@ -21,7 +21,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { TeamConversationRecord, TeamMessageRecord, UserRole } from '../types/database';
-import { createNotification, getEffectiveCompanyId } from './dal';
+import { createNotification, getEffectiveCompanyId, getAllUsers } from './dal';
 
 export const LOCAL_STORAGE_CONVERSATIONS_KEY = 'crm_local_conversations_v1';
 export const LOCAL_STORAGE_MESSAGES_KEY = 'crm_local_messages_v1';
@@ -88,18 +88,14 @@ export function subscribeToConversations(
   onError?: (err: Error) => void
 ): Unsubscribe {
   const safeRole = (userRole || '').toUpperCase();
-  const isAdmin = safeRole === 'ADMIN';
 
   const filterAndEmit = (list: TeamConversationRecord[]) => {
     const filtered = list
       .filter((c) => {
         if (c.company_id !== companyId) return false;
-        if (isAdmin) {
-          // Admin can see conversations involving them or all company team chats
-          return c.participant_ids?.includes(userId) || true;
-        }
-        // Salesman: only conversations where they are a participant
-        return c.participant_ids?.includes(userId);
+        // Strictly participant-based privacy:
+        // A user (Admin or Salesman) can only see conversations where their UID is included
+        return Array.isArray(c.participant_ids) && c.participant_ids.includes(userId);
       })
       .sort((a, b) => {
         const timeA = new Date(a.last_message_at || a.created_at).getTime();
@@ -124,8 +120,12 @@ export function subscribeToConversations(
   let firestoreUnsub: Unsubscribe = () => {};
   try {
     const convCol = collection(db, 'conversations');
-    // Query scoped to company
-    const q = query(convCol, where('company_id', '==', companyId));
+    // Query scoped to company and participant
+    const q = query(
+      convCol,
+      where('company_id', '==', companyId),
+      where('participant_ids', 'array-contains', userId)
+    );
 
     firestoreUnsub = onSnapshot(
       q,
@@ -249,6 +249,13 @@ export async function getOrCreateConversation(
 ): Promise<TeamConversationRecord> {
   if (currentUserId === targetUserId) {
     throw new Error('Self-conversations are not supported.');
+  }
+
+  // Cross-company boundary verification
+  const users = await getAllUsers();
+  const targetUser = users.find((u) => u.id === targetUserId);
+  if (targetUser && targetUser.company_id && targetUser.company_id !== companyId) {
+    throw new Error('Unauthorized: Cross-company communication is strictly prohibited.');
   }
 
   const localConvs = getLocalConversations();

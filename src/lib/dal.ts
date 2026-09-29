@@ -905,9 +905,9 @@ function setLocalAttachments(att: AttachmentRecord[]) {
   }
 }
 
-export function notifyAttachmentsChanged(leadId?: string) {
+export function notifyAttachmentsChanged(leadId?: string, clientId?: string) {
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('crm_attachments_changed', { detail: { leadId } }));
+    window.dispatchEvent(new CustomEvent('crm_attachments_changed', { detail: { leadId, clientId } }));
   }
 }
 
@@ -2712,16 +2712,22 @@ export async function createActivity(input: CreateActivityInput): Promise<LeadAc
   if (input.next_followup && input.next_followup.scheduled_at) {
     try {
       const fuRecord = await createFollowUp({
-        lead_id: targetLeadId || targetClientId,
+        lead_id: targetLeadId || undefined,
+        client_id: targetClientId || undefined,
         action: input.next_followup.action_type || 'Follow-up',
         scheduled_at: input.next_followup.scheduled_at,
         status: 'pending',
       });
       activityData.scheduled_followup_id = fuRecord.id;
 
-      // Update lead's next_action and next_followup_date if it's a lead
+      // Update lead or client next_action and next_followup_date
       if (targetLeadId) {
         await updateLead(targetLeadId, {
+          next_action: `${input.next_followup.action_type || 'Follow-up'} on ${new Date(input.next_followup.scheduled_at).toLocaleDateString()}`,
+          next_followup_date: input.next_followup.scheduled_at,
+        });
+      } else if (targetClientId) {
+        await updateClient(targetClientId, {
           next_action: `${input.next_followup.action_type || 'Follow-up'} on ${new Date(input.next_followup.scheduled_at).toLocaleDateString()}`,
           next_followup_date: input.next_followup.scheduled_at,
         });
@@ -3336,6 +3342,35 @@ export async function recalculateLeadNextFollowUp(leadId: string): Promise<void>
   }
 }
 
+export async function recalculateClientNextFollowUp(clientId: string): Promise<void> {
+  try {
+    const allFollowUps = getLocalFollowUps().filter((f) => f.client_id === clientId);
+    const pending = allFollowUps
+      .filter((f) => f.status === 'pending')
+      .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+
+    if (pending.length > 0) {
+      const nearest = pending[0];
+      const scheduledDate = new Date(nearest.scheduled_at);
+      const isToday = scheduledDate.toDateString() === new Date().toDateString();
+      const timeStr = scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const actionDisplay = `${nearest.action} (${isToday ? 'Today' : scheduledDate.toLocaleDateString()} ${timeStr})`;
+
+      await updateClient(clientId, {
+        next_action: actionDisplay,
+        next_followup_date: nearest.scheduled_at,
+      });
+    } else {
+      await updateClient(clientId, {
+        next_action: '',
+        next_followup_date: '',
+      });
+    }
+  } catch (err) {
+    console.warn('recalculateClientNextFollowUp notice:', err);
+  }
+}
+
 export async function createFollowUp(
   input: CreateFollowUpInput,
   currentUserRole?: UserRole
@@ -3445,6 +3480,31 @@ export async function createFollowUp(
     await recalculateLeadNextFollowUp(targetLeadId);
   }
 
+  // Recalculate client's next follow up if client_id is present
+  if (targetClientId) {
+    await recalculateClientNextFollowUp(targetClientId);
+    try {
+      await createActivity({
+        client_id: targetClientId,
+        activity_type: (followUpData.action as any) || 'Follow-up',
+        description: `Scheduled ${followUpData.action}: ${followUpData.notes || 'Relationship touchpoint'}`,
+        notes: `Scheduled for ${new Date(followUpData.scheduled_at).toLocaleString()}`,
+        activity_date: now,
+        activity_at: now,
+        performed_by: assignedTo,
+        performed_by_name: assignedToName,
+        is_system_activity: true,
+        metadata: {
+          scheduled_at: followUpData.scheduled_at,
+          followup_id: followUpData.id,
+          action: followUpData.action,
+        },
+      });
+    } catch (actErr) {
+      console.warn('Auto client activity for scheduled follow-up notice:', actErr);
+    }
+  }
+
   return followUpData;
 }
 
@@ -3536,9 +3596,13 @@ export async function completeFollowUp(input: CompleteFollowUpInput): Promise<vo
       notes: input.next_followup.notes || '',
       status: 'pending',
     });
-  } else if (targetLeadId) {
-    // Recalculate lead's next follow up only for lead
-    await recalculateLeadNextFollowUp(targetLeadId);
+  } else {
+    if (targetLeadId) {
+      await recalculateLeadNextFollowUp(targetLeadId);
+    }
+    if (targetClientId) {
+      await recalculateClientNextFollowUp(targetClientId);
+    }
   }
 
   // Notify Admin of completed follow-up
@@ -3723,9 +3787,12 @@ export async function cancelFollowUp(input: CancelFollowUpInput): Promise<void> 
     is_system_activity: true,
   });
 
-  // Recalculate lead's next follow up only for lead
+  // Recalculate next follow up
   if (targetLeadId) {
     await recalculateLeadNextFollowUp(targetLeadId);
+  }
+  if (targetClientId) {
+    await recalculateClientNextFollowUp(targetClientId);
   }
 }
 
@@ -4269,6 +4336,279 @@ export function subscribeToLeadAttachments(
     );
   } catch (e: any) {
     console.warn('Could not establish Firestore attachments listener:', e);
+  }
+
+  return () => {
+    firestoreUnsub();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('crm_attachments_changed', handleCustomEvent);
+    }
+  };
+}
+
+export async function uploadClientAttachment(
+  input: {
+    client_id: string;
+    file: File;
+    category?: AttachmentCategory;
+    description?: string;
+    onProgress?: (progressPercent: number) => void;
+  },
+  currentUserRole?: UserRole
+): Promise<AttachmentRecord> {
+  const userId = getEffectiveUserId();
+  const userName = getUserDisplayName(userId);
+  const now = new Date().toISOString();
+
+  if (!input.client_id) {
+    throw new Error('Validation Error: client_id is required for uploading an attachment.');
+  }
+
+  const validation = validateAttachmentFile(input.file);
+  if (!validation.valid) {
+    throw new Error(validation.error || 'Invalid file.');
+  }
+
+  const client = await getClientById(input.client_id);
+  const isUserAdmin = isUserAdminOrSuper(currentUserRole);
+  if (!isUserAdmin && client && client.owner_id !== userId && client.created_by !== userId) {
+    throw new Error('Permission Denied: You are not authorized to attach files to this client.');
+  }
+
+  const sanitizedFileName = input.file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const fileId = 'att_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+  const path = `clients/${input.client_id}/attachments/${fileId}/${sanitizedFileName}`;
+
+  let downloadUrl = '';
+
+  try {
+    const fileRef = storageRef(storage, path);
+    const uploadTask = uploadBytesResumable(fileRef, input.file, {
+      contentType: input.file.type || 'application/octet-stream',
+      customMetadata: {
+        client_id: input.client_id,
+        uploaded_by: userId,
+        category: input.category || 'Project Document',
+      },
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          if (input.onProgress && snapshot.totalBytes > 0) {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            input.onProgress(Math.min(99, Math.round(progress)));
+          }
+        },
+        (error) => {
+          console.warn('Firebase Storage upload error, falling back:', error);
+          reject(error);
+        },
+        async () => {
+          try {
+            downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+            if (input.onProgress) input.onProgress(100);
+            resolve();
+          } catch (urlErr) {
+            console.warn('getDownloadURL error:', urlErr);
+            resolve();
+          }
+        }
+      );
+    });
+  } catch (storageErr) {
+    console.warn('Storage upload fallback triggered:', storageErr);
+    if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+      try {
+        downloadUrl = URL.createObjectURL(input.file);
+      } catch (objUrlErr) {
+        console.warn('createObjectURL fallback notice:', objUrlErr);
+      }
+    }
+    if (input.onProgress) input.onProgress(100);
+  }
+
+  const attachmentRecord: AttachmentRecord = {
+    id: fileId,
+    client_id: input.client_id,
+    file_name: input.file.name,
+    storage_path: path,
+    file_type: input.file.type || 'application/octet-stream',
+    file_size: input.file.size,
+    uploaded_by: userId,
+    uploaded_by_name: userName,
+    uploaded_at: now,
+    updated_at: now,
+    created_at: now,
+    category: input.category || 'Project Document',
+    description: input.description || '',
+    download_url: downloadUrl,
+  };
+
+  const localList = getLocalAttachments();
+  localList.unshift(attachmentRecord);
+  setLocalAttachments(localList);
+  notifyAttachmentsChanged(undefined, input.client_id);
+
+  try {
+    const docRef = doc(db, 'clients', input.client_id, 'attachments', fileId);
+    const { id, ...dataToSync } = attachmentRecord;
+    await setDoc(docRef, dataToSync);
+  } catch (fsErr) {
+    console.warn('Firestore setDoc client attachment notice:', fsErr);
+  }
+
+  try {
+    const catLabel = input.category ? ` [${input.category}]` : '';
+    await createActivity({
+      client_id: input.client_id,
+      company_name: client?.company_name,
+      client_name: client?.company_name,
+      activity_type: 'Attachment Uploaded',
+      description: `Document attached: ${input.file.name} (${formatFileSize(input.file.size)})${catLabel}`,
+      notes: `File "${input.file.name}" uploaded to client documents.${input.description ? `\nNotes: ${input.description}` : ''}`,
+      outcome: input.category || 'Project Document',
+      performed_by: userId,
+      performed_by_name: userName,
+      activity_date: now,
+      activity_at: now,
+      is_system_activity: true,
+      new_value: input.file.name,
+      metadata: {
+        attachment_id: fileId,
+        file_name: input.file.name,
+        file_size: input.file.size,
+        file_type: input.file.type,
+        category: input.category || 'Project Document',
+        storage_path: path,
+        download_url: downloadUrl,
+      },
+    });
+  } catch (actErr) {
+    console.warn('System activity for attachment upload notice:', actErr);
+  }
+
+  return attachmentRecord;
+}
+
+export async function deleteClientAttachment(
+  clientId: string,
+  attachment: AttachmentRecord,
+  currentUserRole?: UserRole,
+  performerId?: string,
+  performerName?: string
+): Promise<void> {
+  const userId = performerId || getEffectiveUserId();
+  const userName = performerName || getUserDisplayName(userId);
+  const now = new Date().toISOString();
+
+  const isUserAdmin = isUserAdminOrSuper(currentUserRole);
+  const client = await getClientById(clientId);
+  const isAssigned = client && (client.owner_id === userId || client.created_by === userId);
+
+  if (!isUserAdmin && !isAssigned) {
+    throw new Error('Permission Denied: You do not have permission to delete this document.');
+  }
+
+  const localList = getLocalAttachments().filter((a) => a.id !== attachment.id);
+  setLocalAttachments(localList);
+  notifyAttachmentsChanged(undefined, clientId);
+
+  if (attachment.storage_path) {
+    try {
+      const fileRef = storageRef(storage, attachment.storage_path);
+      await deleteObject(fileRef);
+    } catch (storErr) {
+      console.warn('Firebase Storage deleteObject notice:', storErr);
+    }
+  }
+
+  try {
+    const docRef = doc(db, 'clients', clientId, 'attachments', attachment.id);
+    await deleteDoc(docRef);
+  } catch (fsErr) {
+    console.warn('Firestore deleteDoc attachment notice:', fsErr);
+  }
+
+  try {
+    await createActivity({
+      client_id: clientId,
+      company_name: client?.company_name,
+      client_name: client?.company_name,
+      activity_type: 'Attachment Deleted',
+      description: `Document removed: ${attachment.file_name}`,
+      notes: `Attachment "${attachment.file_name}" was deleted from client documents.`,
+      outcome: 'File Removed',
+      performed_by: userId,
+      performed_by_name: userName,
+      activity_date: now,
+      activity_at: now,
+      is_system_activity: true,
+      previous_value: attachment.file_name,
+      metadata: {
+        attachment_id: attachment.id,
+        file_name: attachment.file_name,
+      },
+    });
+  } catch (actErr) {
+    console.warn('System activity for attachment deletion notice:', actErr);
+  }
+}
+
+export function subscribeToClientAttachments(
+  clientId: string,
+  onUpdate: (attachments: AttachmentRecord[]) => void,
+  onError?: (err: Error) => void
+): Unsubscribe {
+  const filterAndEmit = (list: AttachmentRecord[]) => {
+    const filtered = list
+      .filter((a) => a.client_id === clientId || a.lead_id === clientId)
+      .sort(
+        (a, b) =>
+          new Date(b.uploaded_at || b.created_at || 0).getTime() -
+          new Date(a.uploaded_at || a.created_at || 0).getTime()
+      );
+    onUpdate(filtered);
+  };
+
+  filterAndEmit(getLocalAttachments());
+
+  const handleCustomEvent = (e: any) => {
+    if (!e.detail || !e.detail.clientId || e.detail.clientId === clientId) {
+      filterAndEmit(getLocalAttachments());
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('crm_attachments_changed', handleCustomEvent);
+  }
+
+  let firestoreUnsub: Unsubscribe = () => {};
+
+  try {
+    const attachCol = collection(db, 'clients', clientId, 'attachments');
+    firestoreUnsub = onSnapshot(
+      attachCol,
+      (snapshot) => {
+        const fsList: AttachmentRecord[] = [];
+        snapshot.forEach((docSnap) => {
+          fsList.push({ id: docSnap.id, ...docSnap.data() } as AttachmentRecord);
+        });
+
+        const otherLocal = getLocalAttachments().filter((a) => a.client_id !== clientId && a.lead_id !== clientId);
+        const merged = [...fsList, ...otherLocal];
+        setLocalAttachments(merged);
+        filterAndEmit(merged);
+      },
+      (err) => {
+        console.warn('Firestore client attachments subscription fallback:', err);
+        filterAndEmit(getLocalAttachments());
+        if (onError) onError(err);
+      }
+    );
+  } catch (e: any) {
+    console.warn('Could not establish Firestore client attachments listener:', e);
   }
 
   return () => {
@@ -5432,7 +5772,9 @@ export async function getClients(options?: {
     local = local.filter((c) => (c.company_id || DEFAULT_COMPANY_ID) === effectiveCompany);
   }
   if (!options?.includeMerged) {
-    local = local.filter((c) => c.record_status !== 'merged');
+    local = local.filter((c) => c.record_status !== 'merged' && c.record_status !== 'deleted');
+  } else {
+    local = local.filter((c) => c.record_status !== 'deleted');
   }
   if (!isUserAdmin) {
     local = local.filter((c) => c.owner_id === userId);
@@ -5469,7 +5811,9 @@ export function subscribeToClients(
       filtered = filtered.filter((c) => (c.company_id || DEFAULT_COMPANY_ID) === effectiveCompany);
     }
     if (!includeMerged) {
-      filtered = filtered.filter((c) => c.record_status !== 'merged');
+      filtered = filtered.filter((c) => c.record_status !== 'merged' && c.record_status !== 'deleted');
+    } else {
+      filtered = filtered.filter((c) => c.record_status !== 'deleted');
     }
     if (!isUserAdmin) {
       filtered = filtered.filter((c) => c.owner_id === userId);
@@ -5921,6 +6265,165 @@ export async function transferClientOwnership(input: TransferClientInput): Promi
 
 // Aliases matching prompt conventions
 export const transferClient = transferClientOwnership;
+
+/**
+ * Permanently deletes a Client record with strict RBAC authorization and audit compliance.
+ * - Only Company Administrator (ADMIN) or users with explicit CLIENTS_DELETE permission can delete.
+ * - CUSTOMER and SUPER_ADMIN cannot delete tenant clients.
+ * - Cross-company deletion is strictly blocked.
+ * - Cleans up active client follow-ups (prevents orphaned active tasks).
+ * - CRITICAL: Preserves related Leads while unlinking client_id (does not delete leads).
+ * - Records an immutable audit log entry in /audit_logs (remains available to admins permanently).
+ */
+export async function deleteClient(
+  clientId: string,
+  reason?: string,
+  actor?: { id: string; name: string; role: UserRole; company_id?: string }
+): Promise<void> {
+  const localList = getLocalClients();
+  const clientToDelete = localList.find((c) => c.id === clientId);
+  const adminId = actor?.id || getEffectiveUserId();
+  const adminName = actor?.name || getEffectiveUserName();
+  const normalizedRole = ((actor?.role || getEffectiveUserRole() || '') as string).toUpperCase();
+  const actorCompany = actor?.company_id || getEffectiveCompanyId() || DEFAULT_COMPANY_ID;
+
+  // 1. Strict RBAC checks: CUSTOMER and SUPER_ADMIN blocked
+  if (normalizedRole === 'CUSTOMER') {
+    throw new Error('Unauthorized: Customer accounts cannot delete client records.');
+  }
+  if (normalizedRole === 'SUPER_ADMIN') {
+    throw new Error('Unauthorized: Platform Super Administrators cannot delete tenant client records through normal CRM.');
+  }
+
+  const actorProfile = await getUserProfile(adminId);
+  const isCompanyAdmin =
+    normalizedRole === 'ADMIN' ||
+    isUserAdminOrSuper(normalizedRole as UserRole);
+  const hasDeletePerm = hasPermission(actorProfile, 'CLIENTS_DELETE');
+
+  if (!isCompanyAdmin && !hasDeletePerm) {
+    throw new Error('Unauthorized: You do not have permission to delete clients (ADMIN role required).');
+  }
+
+  // 2. Multi-tenant boundary check
+  const targetComp = clientToDelete?.company_id || actorCompany;
+  if (clientToDelete?.company_id && actorCompany && clientToDelete.company_id !== actorCompany) {
+    throw new Error('Unauthorized: You can only delete clients belonging to your own company.');
+  }
+
+  const now = new Date().toISOString();
+
+  // 3. Remove client from local cache immediately
+  const updatedClients = localList.filter((c) => c.id !== clientId);
+  setLocalClients(updatedClients);
+  notifyClientsChanged();
+
+  // 4. Hard delete document from Firestore
+  try {
+    const clientDocRef = doc(db, 'clients', clientId);
+    await deleteDoc(clientDocRef);
+  } catch (err) {
+    console.warn('Firestore deleteClient fallback notice:', err);
+  }
+
+  // 5. Cleanup related Client Follow-ups: remove from local cache and delete from Firestore
+  try {
+    const localFu = getLocalFollowUps();
+    const updatedFu = localFu.filter((f) => f.client_id !== clientId);
+    setLocalFollowUps(updatedFu);
+    notifyFollowupsChanged(clientId);
+
+    const fuToDelete = localFu.filter((f) => f.client_id === clientId);
+    for (const fu of fuToDelete) {
+      try {
+        await deleteDoc(doc(db, 'followups', fu.id));
+      } catch (e) {}
+    }
+  } catch (fuErr) {
+    console.warn('Cleanup client follow-ups notice:', fuErr);
+  }
+
+  // 6. Preserve related Leads: Unlink client_id without deleting lead records
+  try {
+    const localLeads = getLocalLeads();
+    let leadsChanged = false;
+    const updatedLeads = localLeads.map((l) => {
+      if (l.client_id === clientId || l.source_client_id === clientId || l.converted_to_client_id === clientId) {
+        leadsChanged = true;
+        return {
+          ...l,
+          client_id: undefined,
+          source_client_id: undefined,
+          converted_to_client_id: undefined,
+          updated_at: now,
+        };
+      }
+      return l;
+    });
+
+    if (leadsChanged) {
+      setLocalLeads(updatedLeads);
+      notifyLeadsChanged();
+
+      for (const l of localLeads) {
+        if (l.client_id === clientId || l.source_client_id === clientId || l.converted_to_client_id === clientId) {
+          try {
+            await updateDoc(doc(db, 'leads', l.id), {
+              client_id: null,
+              source_client_id: null,
+              converted_to_client_id: null,
+              updated_at: now,
+            });
+          } catch (e) {}
+        }
+      }
+    }
+  } catch (leadErr) {
+    console.warn('Preserve leads on client delete notice:', leadErr);
+  }
+
+  // 7. Cleanup related client activities from local storage
+  try {
+    const localActs = getLocalActivities();
+    const updatedActs = localActs.filter((a) => a.client_id !== clientId);
+    setLocalActivities(updatedActs);
+    notifyActivitiesChanged();
+  } catch (actErr) {
+    console.warn('Cleanup client activities notice:', actErr);
+  }
+
+  // 8. Immutable Audit Log (Remains in audit_logs permanently)
+  try {
+    await createAuditLog({
+      action: 'client_deleted',
+      entity_type: 'Client',
+      entity_id: clientId,
+      company_id: targetComp || DEFAULT_COMPANY_ID,
+      performed_by: adminId,
+      performed_by_name: adminName,
+      performed_by_role: isCompanyAdmin ? 'ADMIN' : 'SALESMAN',
+      description: `${isCompanyAdmin ? 'Company Administrator' : 'Sales Representative'} ${adminName} permanently deleted Client "${clientToDelete?.company_name || clientId}".${reason ? ` Reason: ${reason}` : ''}`,
+      metadata: {
+        action: 'DELETE_CLIENT',
+        client_id: clientId,
+        client_name: clientToDelete?.company_name,
+        contact_person: clientToDelete?.contact_person,
+        contact_phone: clientToDelete?.phone,
+        contact_email: clientToDelete?.email,
+        owner_id: clientToDelete?.owner_id,
+        owner_name: clientToDelete?.owner_name,
+        company_id: targetComp || DEFAULT_COMPANY_ID,
+        deleted_by: adminId,
+        deleted_by_name: adminName,
+        performed_by_role: isCompanyAdmin ? 'ADMIN' : 'SALESMAN',
+        timestamp: now,
+        reason: reason || 'Client Deletion',
+      },
+    });
+  } catch (auditErr) {
+    console.warn('deleteClient audit log notice:', auditErr);
+  }
+}
 
 /**
  * Validates and checks for client duplicates within the same company.

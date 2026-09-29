@@ -253,19 +253,20 @@ const AuthenticatedCRM: React.FC = () => {
             setCurrentView('dashboard');
           }
         } else if (pathname === '/communication-hub') {
-          if (userProfile?.role === 'ADMIN') {
+          const isInternalEmployee = userProfile?.role === 'ADMIN' || userProfile?.role === 'SALESMAN';
+          if (isInternalEmployee) {
             setCurrentView('communication-hub');
           } else {
             if (!isPopState) {
               addToast(
                 'error',
                 'Access Denied',
-                'Company Administrator credentials required to access Communication Hub.'
+                'Company employee credentials required to access Communication Hub.'
               );
               recordSecurityAuditLog({
                 action: 'security_unauthorized_action',
-                description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted direct URL navigation to /communication-hub.`,
-                metadata: { path: pathname, user_role: userProfile?.role || 'SALESMAN', blocked: true },
+                description: `Security Notice: User ${userProfile?.full_name || 'Customer'} attempted direct URL navigation to /communication-hub.`,
+                metadata: { path: pathname, user_role: userProfile?.role || 'CUSTOMER', blocked: true },
               });
               window.history.replaceState({}, '', '/');
             }
@@ -400,19 +401,22 @@ const AuthenticatedCRM: React.FC = () => {
       return;
     }
 
-    // Company Admin Security check for Communication Hub navigation
-    if (view === 'communication-hub' && userProfile?.role !== 'ADMIN') {
-      addToast(
-        'error',
-        'Access Denied',
-        'Company Administrator credentials required to access the Communication Hub.'
-      );
-      recordSecurityAuditLog({
-        action: 'security_unauthorized_action',
-        description: `Security Notice: User ${userProfile?.full_name || 'Salesman'} attempted unauthorized navigation to Communication Hub.`,
-        metadata: { attempted_view: 'communication-hub', user_role: userProfile?.role || 'SALESMAN', status: 'BLOCKED' },
-      });
-      return;
+    // Company Employee Security check for Communication Hub navigation (Admin and Salesman permitted)
+    if (view === 'communication-hub') {
+      const isInternalEmployee = userProfile?.role === 'ADMIN' || userProfile?.role === 'SALESMAN';
+      if (!isInternalEmployee) {
+        addToast(
+          'error',
+          'Access Denied',
+          'Company employee credentials required to access the Communication Hub.'
+        );
+        recordSecurityAuditLog({
+          action: 'security_unauthorized_action',
+          description: `Security Notice: User ${userProfile?.full_name || 'Customer'} attempted unauthorized navigation to Communication Hub.`,
+          metadata: { attempted_view: 'communication-hub', user_role: userProfile?.role || 'CUSTOMER', status: 'BLOCKED' },
+        });
+        return;
+      }
     }
 
     // Company Admin Security check for Team Management navigation

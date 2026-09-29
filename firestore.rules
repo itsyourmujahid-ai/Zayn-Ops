@@ -165,9 +165,12 @@ service cloud.firestore {
       );
       
       // Creating user profiles:
-      // - Super Admin can create any profile
+      // - Super Admin can create any profile (e.g. provisioning first Company Admin)
       // - Company Admin can create SALESMAN profiles strictly for their own company
-      // - User can create their own profile on signup
+      // - User can create their own profile on signup:
+      //   * ONLY bootstrap email (itsyourmujahid@gmail.com) can self-assign SUPER_ADMIN
+      //   * All other self-registrations are strictly restricted to non-privileged roles: 'SALESMAN' or 'CUSTOMER'
+      //   * Prevents self-assigning ADMIN or SUPER_ADMIN and restricts self-assigned permissions
       allow create: if isAuthenticated() && (
         isSuperAdmin() ||
         (
@@ -177,15 +180,18 @@ service cloud.firestore {
         ) ||
         (
           request.auth.uid == userId && (
-            request.resource.data.role != 'SUPER_ADMIN' ||
-            (request.auth.token.email != null && request.auth.token.email.lower() == 'itsyourmujahid@gmail.com')
+            (request.auth.token.email != null && request.auth.token.email.lower() == 'itsyourmujahid@gmail.com' && request.resource.data.role == 'SUPER_ADMIN') ||
+            (
+              request.resource.data.role in ['SALESMAN', 'CUSTOMER'] &&
+              (!('permissions' in request.resource.data) || request.resource.data.permissions.size() == 0)
+            )
           )
         )
       );
       
       // Update profile:
       // - Super Admin can update any profile
-      // - Company Admin can update profiles in their own company (cannot create Super Admin or change company_id)
+      // - Company Admin can update profiles in their own company (cannot create/elevate to Super Admin or Admin, cannot change company_id)
       // - Users can update their own basic profile info (CANNOT modify permissions, role, company_id, or is_active)
       allow update: if isAuthenticated() && (
         isSuperAdmin() ||
@@ -194,6 +200,7 @@ service cloud.firestore {
           belongsToCompany(resource.data) &&
           resource.data.role != 'SUPER_ADMIN' &&
           request.resource.data.role != 'SUPER_ADMIN' &&
+          request.resource.data.role != 'ADMIN' &&
           (!('company_id' in request.resource.data) || request.resource.data.company_id == resource.data.company_id)
         ) ||
         (
@@ -447,7 +454,7 @@ service cloud.firestore {
                     request.resource.data.company_name is string &&
                     request.resource.data.company_name.size() > 0 &&
                     request.resource.data.owner_id is string &&
-                    (!('status' in request.resource.data) || request.resource.data.status in ['Active', 'Inactive', 'Potential', 'Archived']) &&
+                    (!('status' in request.resource.data) || request.resource.data.status in ['Active', 'Inactive', 'Dormant', 'Potential', 'Archived']) &&
                     (
                       isAdmin() ||
                       request.resource.data.owner_id == request.auth.uid ||
@@ -461,7 +468,7 @@ service cloud.firestore {
           hasPermission('CLIENTS_EDIT') &&
           resource.data.owner_id == request.auth.uid &&
           request.resource.data.owner_id == resource.data.owner_id &&
-          (!('status' in request.resource.data) || request.resource.data.status in ['Active', 'Inactive', 'Potential', 'Archived'])
+          (!('status' in request.resource.data) || request.resource.data.status in ['Active', 'Inactive', 'Dormant', 'Potential', 'Archived'])
         ) ||
         (
           // Client Transfer: admin, user with CLIENTS_TRANSFER, or current owner transferring
@@ -470,7 +477,10 @@ service cloud.firestore {
         )
       );
 
-      allow delete: if isAuthenticated() && isActive() && belongsToCompany(resource.data) && isAdmin();
+      allow delete: if isAuthenticated() && isActive() && belongsToCompany(resource.data) && (
+        isAdmin() ||
+        hasPermission('CLIENTS_DELETE')
+      );
 
       // Client Subcollection: Activities
       match /activities/{activityId} {
@@ -484,6 +494,28 @@ service cloud.firestore {
         allow read: if canAccessClient(clientId);
         allow create: if isAuthenticated() && isActive() && canAccessClient(clientId);
         allow update, delete: if false;
+      }
+
+      // Client Subcollection: Follow-ups
+      match /followups/{followupId} {
+        allow read: if canAccessClient(clientId) && (isAdmin() || hasPermission('FOLLOWUPS_VIEW'));
+        allow create: if isAuthenticated() && isActive() && canAccessClient(clientId) &&
+                      (isAdmin() || hasPermission('FOLLOWUPS_CREATE')) &&
+                      request.resource.data.created_by == request.auth.uid &&
+                      (!('status' in request.resource.data) || isValidFollowupStatus(request.resource.data.status));
+        allow update: if isAuthenticated() && isActive() && canAccessClient(clientId) &&
+                      (isAdmin() || hasPermission('FOLLOWUPS_EDIT'));
+        allow delete: if isAuthenticated() && isActive() && canAccessClient(clientId) &&
+                      (isAdmin() || hasPermission('FOLLOWUPS_DELETE'));
+      }
+
+      // Client Subcollection: Attachments
+      match /attachments/{attachmentId} {
+        allow read: if canAccessClient(clientId) && (isAdmin() || hasPermission('ATTACHMENTS_VIEW'));
+        allow create: if isAuthenticated() && isActive() && canAccessClient(clientId) &&
+                      (isAdmin() || hasPermission('ATTACHMENTS_UPLOAD'));
+        allow delete: if isAuthenticated() && isActive() && canAccessClient(clientId) &&
+                      (isAdmin() || hasPermission('ATTACHMENTS_DELETE'));
       }
     }
 
@@ -591,24 +623,15 @@ service cloud.firestore {
     match /conversations/{conversationId} {
       allow read: if isAuthenticated() && !isSuperAdmin() && isActive() && isCompanyActive() &&
                   belongsToCompany(resource.data) &&
-                  (
-                    isAdmin() ||
-                    (resource.data.participant_ids is list && request.auth.uid in resource.data.participant_ids)
-                  );
+                  (resource.data.participant_ids is list && request.auth.uid in resource.data.participant_ids);
 
       allow create: if isAuthenticated() && !isSuperAdmin() && isActive() && isCompanyActive() &&
                     belongsToCompany(request.resource.data) &&
-                    (
-                      isAdmin() ||
-                      (request.resource.data.participant_ids is list && request.auth.uid in request.resource.data.participant_ids)
-                    );
+                    (request.resource.data.participant_ids is list && request.auth.uid in request.resource.data.participant_ids);
 
       allow update: if isAuthenticated() && !isSuperAdmin() && isActive() && isCompanyActive() &&
                     belongsToCompany(resource.data) && belongsToCompany(request.resource.data) &&
-                    (
-                      isAdmin() ||
-                      (resource.data.participant_ids is list && request.auth.uid in resource.data.participant_ids)
-                    );
+                    (resource.data.participant_ids is list && request.auth.uid in resource.data.participant_ids);
 
       allow delete: if isAuthenticated() && !isSuperAdmin() && isActive() && isAdmin() &&
                     belongsToCompany(resource.data);
@@ -617,29 +640,22 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if isAuthenticated() && !isSuperAdmin() && isActive() && isCompanyActive() &&
                     (
-                      isAdmin() ||
-                      (
-                        exists(/databases/$(database)/documents/conversations/$(conversationId)) &&
-                        request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participant_ids
-                      )
+                      exists(/databases/$(database)/documents/conversations/$(conversationId)) &&
+                      request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participant_ids
                     );
 
         allow create: if isAuthenticated() && !isSuperAdmin() && isActive() && isCompanyActive() &&
                       request.resource.data.sender_id == request.auth.uid &&
                       (
-                        isAdmin() ||
-                        (
-                          exists(/databases/$(database)/documents/conversations/$(conversationId)) &&
-                          request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participant_ids
-                        )
+                        exists(/databases/$(database)/documents/conversations/$(conversationId)) &&
+                        request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participant_ids
                       );
 
         allow update: if isAuthenticated() && !isSuperAdmin() && isActive() && isCompanyActive() &&
                       (
                         // Marking read (updating read_by array) or sender editing
                         request.auth.uid in request.resource.data.read_by ||
-                        resource.data.sender_id == request.auth.uid ||
-                        isAdmin()
+                        resource.data.sender_id == request.auth.uid
                       );
 
         allow delete: if isAuthenticated() && !isSuperAdmin() && isActive() &&

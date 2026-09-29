@@ -15,7 +15,8 @@ interface CompleteFollowUpModalProps {
   isOpen: boolean;
   followUp: FollowUpRecord | null;
   onClose: () => void;
-  onComplete: (input: CompleteFollowUpInput) => Promise<void>;
+  onComplete?: (input: CompleteFollowUpInput) => Promise<void>;
+  onCompleted?: (input: CompleteFollowUpInput) => Promise<void>;
 }
 
 const OUTCOME_PRESETS = [
@@ -36,6 +37,7 @@ export const CompleteFollowUpModal: React.FC<CompleteFollowUpModalProps> = ({
   followUp,
   onClose,
   onComplete,
+  onCompleted,
 }) => {
   const { userProfile } = useAuth();
   const [outcome, setOutcome] = useState<string>(OUTCOME_PRESETS[0]);
@@ -77,16 +79,19 @@ export const CompleteFollowUpModal: React.FC<CompleteFollowUpModalProps> = ({
     try {
       setSubmitting(true);
       setError('');
-      await onComplete({
-        lead_id: followUp.lead_id,
-        client_id: followUp.client_id,
-        followup_id: followUp.id,
-        outcome: finalOutcome,
-        notes: notes.trim(),
-        performer_id: userProfile?.id,
-        performer_name: userProfile?.full_name,
-        next_followup: nextFollowUpPayload,
-      });
+      const callback = onComplete || onCompleted;
+      if (callback) {
+        await callback({
+          lead_id: followUp.lead_id,
+          client_id: followUp.client_id,
+          followup_id: followUp.id,
+          outcome: finalOutcome,
+          notes: notes.trim(),
+          performer_id: userProfile?.id,
+          performer_name: userProfile?.full_name,
+          next_followup: nextFollowUpPayload,
+        });
+      }
       onClose();
     } catch (err: any) {
       setError(err.message || 'Failed to complete follow-up');

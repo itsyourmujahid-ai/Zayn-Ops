@@ -144,6 +144,7 @@ export type SalesmanPermission =
   | 'CLIENTS_CREATE'
   | 'CLIENTS_EDIT'
   | 'CLIENTS_TRANSFER'
+  | 'CLIENTS_DELETE'
   | 'ACTIVITIES_VIEW'
   | 'ACTIVITIES_CREATE'
   | 'COMMUNICATIONS_VIEW'
@@ -437,7 +438,7 @@ export interface LeadRecord {
  * Client document in Firestore: `clients/{clientId}`
  * Phase O — Client Management Foundation & Sales Closing
  */
-export type ClientStatus = 'Active' | 'Inactive' | 'Potential' | 'Archived';
+export type ClientStatus = 'Active' | 'Dormant' | 'Inactive' | 'Potential' | 'Archived';
 export type ClientSource =
   | 'Salesman'
   | 'Referral'
@@ -481,6 +482,8 @@ export interface ClientRecord {
   last_activity_at?: string; // ISO string of most recent activity
   last_contact_at?: string; // ISO string of most recent contact
   last_communication_at?: string; // ISO string of most recent communication
+  next_action?: string; // e.g. "Meeting on 22 Sep"
+  next_followup_date?: string; // ISO string of next scheduled follow-up
   // Phase R: Advanced Tagging
   tags?: string[];
   // Phase S: Duplicate Detection & Safe Merge
@@ -610,7 +613,7 @@ export interface LeadActivityRecord {
 export interface FollowUpRecord {
   id: string;
   company_id?: string; // Tenant company boundary
-  lead_id: string; // Belongs to Lead
+  lead_id?: string; // Belongs to Lead (optional for client-relationship tasks)
   company_name?: string; // Denormalized for display in Follow-up Center
   contact_person?: string;
   phone?: string;
@@ -643,6 +646,7 @@ export interface FollowUpRecord {
   location?: string; // Physical meeting/site address or virtual link
   client_id?: string; // Related client ID if booked for an existing customer
   entity_type?: 'Lead' | 'Client'; // Entity classification
+  reminder?: string; // e.g. '30m', '15m', '1h', 'none'
 }
 
 export type AttachmentCategory =
@@ -661,7 +665,8 @@ export type AttachmentCategory =
 export interface AttachmentRecord {
   id: string;
   company_id?: string; // Tenant company boundary
-  lead_id: string; // Belongs to Lead
+  lead_id?: string; // Belongs to Lead
+  client_id?: string; // Belongs to Client
   file_name: string;
   storage_path: string;
   file_type: string;
@@ -677,7 +682,8 @@ export interface AttachmentRecord {
 }
 
 export interface UploadAttachmentInput {
-  lead_id: string;
+  lead_id?: string;
+  client_id?: string;
   file: File;
   category?: AttachmentCategory;
   description?: string;
@@ -926,6 +932,7 @@ export interface CreateFollowUpInput {
   title?: string;
   end_time?: string;
   location?: string;
+  reminder?: string;
 }
 
 export type UpdateFollowUpInput = Partial<Omit<FollowUpRecord, 'id' | 'created_by' | 'created_at' | 'updated_at'>>;
@@ -999,6 +1006,8 @@ export interface UpdateClientInput {
   notes?: string;
   owner_id?: string;
   related_lead_ids?: string[];
+  next_action?: string;
+  next_followup_date?: string;
 }
 
 export interface TransferClientInput {

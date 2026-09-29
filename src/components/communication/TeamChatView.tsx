@@ -116,9 +116,12 @@ export const TeamChatView: React.FC<TeamChatViewProps> = ({
         const companyTeam = users.filter((u) => {
           const uComp = u.company_id || DEFAULT_COMPANY_ID;
           const isCompMatch = uComp === companyId;
-          const isInternalRole = u.role === 'ADMIN' || u.role === 'SALESMAN';
+          const roleUpper = (u.role || '').toUpperCase();
+          const isInternalRole = roleUpper === 'ADMIN' || roleUpper === 'SALESMAN' || roleUpper === 'SALES_REP';
           const isSelf = u.id === currentUserId || u.email?.toLowerCase() === currentUser?.email?.toLowerCase();
-          return isCompMatch && isInternalRole && !isSelf && u.is_active !== false;
+          // Active check with backward-compatibility for older profiles where is_active is undefined
+          const isActive = u.is_active !== false;
+          return isCompMatch && isInternalRole && !isSelf && isActive;
         });
         setTeamUsers(companyTeam);
       })

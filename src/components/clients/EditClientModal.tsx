@@ -219,8 +219,9 @@ export const EditClientModal: React.FC<EditClientModalProps> = ({
                 onChange={(e) => setStatus(e.target.value as ClientStatus)}
                 className="w-full rounded-lg border border-slate-300 py-2 px-3 text-xs sm:text-sm font-semibold text-slate-800 focus:border-emerald-600 focus:outline-none cursor-pointer"
               >
-                <option value="Active">Active Customer Account</option>
-                <option value="Inactive">Inactive / On Hold</option>
+                <option value="Active">Active</option>
+                <option value="Dormant">Dormant (No recent activity/project)</option>
+                <option value="Inactive">Inactive / Paused</option>
               </select>
             </div>
           </div>

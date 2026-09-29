@@ -58,9 +58,17 @@ export const CommunicationHubPage: React.FC<CommunicationHubPageProps> = ({
   onSelectClient,
 }) => {
   const { userProfile, isSuperAdmin } = useAuth();
+  const isAdmin = userProfile?.role === 'ADMIN';
 
-  // Active Tab: Default to Team Chat
+  // Active Tab: Default to Team Chat (Salesmen are restricted to Team Chat ONLY)
   const [activeTab, setActiveTab] = useState<HubTab>('team-chat');
+
+  // Enforce tab access: If non-admin, lock to team-chat
+  useEffect(() => {
+    if (!isAdmin && activeTab !== 'team-chat') {
+      setActiveTab('team-chat');
+    }
+  }, [isAdmin, activeTab]);
 
   // Data states
   const [communications, setCommunications] = useState<LeadActivityRecord[]>([]);
@@ -137,8 +145,12 @@ export const CommunicationHubPage: React.FC<CommunicationHubPageProps> = ({
     };
   }, [effectiveCompanyId]);
 
-  // 2. Subscriptions for Communications and Transfers
+  // 2. Subscriptions for Communications and Transfers (Admin only)
   useEffect(() => {
+    if (!isAdmin) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const unsubComm = subscribeToCompanyCommunications((data) => {
       setCommunications(data);
@@ -158,7 +170,7 @@ export const CommunicationHubPage: React.FC<CommunicationHubPageProps> = ({
       unsubLeadTr();
       unsubClientTr();
     };
-  }, [effectiveCompanyId]);
+  }, [effectiveCompanyId, isAdmin]);
 
   // Salesmen options for dropdowns
   const companySalesmen = useMemo(() => {
@@ -549,38 +561,40 @@ export const CommunicationHubPage: React.FC<CommunicationHubPageProps> = ({
           </div>
         </div>
 
-        {/* Live Metrics Cards */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2.5">
-            <MessageSquare className="h-4 w-4 text-indigo-600" />
-            <div>
-              <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Communications</div>
-              <div className="text-sm font-bold text-slate-900">{communications.length}</div>
+        {/* Live Metrics Cards (Admin Only) */}
+        {isAdmin && (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2.5">
+              <MessageSquare className="h-4 w-4 text-indigo-600" />
+              <div>
+                <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Communications</div>
+                <div className="text-sm font-bold text-slate-900">{communications.length}</div>
+              </div>
             </div>
-          </div>
 
-          <div className="px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2.5">
-            <History className="h-4 w-4 text-emerald-600" />
-            <div>
-              <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Lead Transfers</div>
-              <div className="text-sm font-bold text-slate-900">{leadTransfers.length}</div>
+            <div className="px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2.5">
+              <History className="h-4 w-4 text-emerald-600" />
+              <div>
+                <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Lead Transfers</div>
+                <div className="text-sm font-bold text-slate-900">{leadTransfers.length}</div>
+              </div>
             </div>
-          </div>
 
-          <div className="px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2.5">
-            <Briefcase className="h-4 w-4 text-sky-600" />
-            <div>
-              <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Client Transfers</div>
-              <div className="text-sm font-bold text-slate-900">{clientTransfers.length}</div>
+            <div className="px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2.5">
+              <Briefcase className="h-4 w-4 text-sky-600" />
+              <div>
+                <div className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Client Transfers</div>
+                <div className="text-sm font-bold text-slate-900">{clientTransfers.length}</div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* 2. Top Tabs Switcher */}
       <div className="border-b border-slate-200 bg-white px-3 pt-2 rounded-t-2xl shadow-2xs">
         <div className="flex items-center gap-2 overflow-x-auto">
-          {/* Tab 0: Team Chat (Premier Internal Messaging) */}
+          {/* Tab 0: Team Chat (Accessible to Both Admin and Salesman) */}
           <button
             type="button"
             id="hub-tab-team-chat"
@@ -598,8 +612,8 @@ export const CommunicationHubPage: React.FC<CommunicationHubPageProps> = ({
             </span>
           </button>
 
-          {/* Tab 1: Communications */}
-          {(userProfile?.role === 'ADMIN' || activeTab === 'communications') && (
+          {/* Tab 1: Communications (Admin Only) */}
+          {isAdmin && (
             <button
               type="button"
               id="hub-tab-communications"
@@ -622,8 +636,8 @@ export const CommunicationHubPage: React.FC<CommunicationHubPageProps> = ({
             </button>
           )}
 
-          {/* Tab 2: Lead Transfers */}
-          {userProfile?.role === 'ADMIN' && (
+          {/* Tab 2: Lead Transfers (Admin Only) */}
+          {isAdmin && (
             <button
               type="button"
               id="hub-tab-lead-transfers"
@@ -686,7 +700,7 @@ export const CommunicationHubPage: React.FC<CommunicationHubPageProps> = ({
       {/* ========================================================= */}
       {/* TAB 1: COMMUNICATIONS */}
       {/* ========================================================= */}
-      {activeTab === 'communications' && (
+      {activeTab === 'communications' && isAdmin && (
         <div className="space-y-4 animate-in fade-in duration-150">
           {/* Controls & Filter Bar */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -934,7 +948,7 @@ export const CommunicationHubPage: React.FC<CommunicationHubPageProps> = ({
       {/* ========================================================= */}
       {/* TAB 2: LEAD TRANSFERS */}
       {/* ========================================================= */}
-      {activeTab === 'lead-transfers' && (
+      {activeTab === 'lead-transfers' && isAdmin && (
         <div className="space-y-4 animate-in fade-in duration-150">
           {/* Controls Bar */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1173,7 +1187,7 @@ export const CommunicationHubPage: React.FC<CommunicationHubPageProps> = ({
       {/* ========================================================= */}
       {/* TAB 3: CLIENT TRANSFERS */}
       {/* ========================================================= */}
-      {activeTab === 'client-transfers' && (
+      {activeTab === 'client-transfers' && isAdmin && (
         <div className="space-y-4 animate-in fade-in duration-150">
           {/* Controls Bar */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
